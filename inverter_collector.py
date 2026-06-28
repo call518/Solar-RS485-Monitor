@@ -2,17 +2,33 @@
 
 import argparse
 import json
+import os
 import time
 from datetime import datetime, timezone
 
+import gspread
 import serial
+from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
 
 
-REQUEST = bytes.fromhex("7e 01 01 d1 88")
-
-EXPECTED_INVERTER_ID = 1
-EXPECTED_FRAME_LEN = 33
-EXPECTED_DATA_LEN = 26
+SHEET_HEADERS = [
+    "timestamp",
+    "inverter_name",
+    "inverter_id",
+    "pv_voltage_v",
+    "pv_current_a",
+    "pv_power_w",
+    "grid_voltage_v",
+    "grid_current_a",
+    "current_output_w",
+    "power_factor_pct",
+    "frequency_hz",
+    "total_generation_kwh",
+    "fault_code",
+    "fault",
+]
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -23,7 +39,47 @@ def u64(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset:offset + 8], "big")
 
 
-def read_frame(port: str, baudrate: int, timeout: float) -> bytes:
+def modbus_crc16(data: bytes) -> int:
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc & 0xFFFF
+
+
+def parse_hex(value: str) -> bytes:
+    return bytes.fromhex(value.replace(" ", ""))
+
+
+def env_bool(name: str, default: str = "false") -> bool:
+    value = os.getenv(name, default).strip().lower()
+    return value in ("1", "true", "yes", "y", "on")
+
+
+def print_json(data: dict) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
+
+
+def get_crc_from_frame(frame: bytes, crc_order: str) -> int:
+    crc_bytes = frame[-2:]
+
+    if crc_order == "LH":
+        return crc_bytes[0] | (crc_bytes[1] << 8)
+
+    if crc_order == "HL":
+        return (crc_bytes[0] << 8) | crc_bytes[1]
+
+    raise RuntimeError(f"Invalid INVERTER_CRC_ORDER: {crc_order}")
+
+
+def read_frame(
+    port: str,
+    baudrate: int,
+    timeout: float,
+    request: bytes,
+    expected_frame_len: int,
+) -> bytes:
     with serial.Serial(
         port=port,
         baudrate=baudrate,
@@ -34,11 +90,9 @@ def read_frame(port: str, baudrate: int, timeout: float) -> bytes:
     ) as ser:
         ser.reset_input_buffer()
         ser.reset_output_buffer()
-
-        ser.write(REQUEST)
+        ser.write(request)
         ser.flush()
-
-        frame = ser.read(EXPECTED_FRAME_LEN)
+        frame = ser.read(expected_frame_len)
 
     if not frame:
         raise RuntimeError("No response from inverter")
@@ -46,9 +100,28 @@ def read_frame(port: str, baudrate: int, timeout: float) -> bytes:
     return frame
 
 
-def parse_frame(frame: bytes) -> dict:
-    if len(frame) < EXPECTED_FRAME_LEN:
+def parse_frame(
+    frame: bytes,
+    inverter_name: str,
+    expected_inverter_id: int,
+    expected_frame_len: int,
+    expected_data_len: int,
+    crc_order: str,
+    verify_crc: bool,
+) -> dict:
+    if len(frame) < expected_frame_len:
         raise RuntimeError(f"Incomplete frame: {len(frame)} bytes")
+
+    if verify_crc:
+        received_crc = get_crc_from_frame(frame, crc_order)
+        calculated_crc = modbus_crc16(frame[:-2])
+
+        if received_crc != calculated_crc:
+            raise RuntimeError(
+                "CRC mismatch "
+                f"received=0x{received_crc:04x} "
+                f"calculated=0x{calculated_crc:04x}"
+            )
 
     if frame[0] != 0x7E:
         raise RuntimeError(f"Invalid SOP: 0x{frame[0]:02x}")
@@ -57,69 +130,191 @@ def parse_frame(frame: bytes) -> dict:
     command = frame[2]
     data_len = int.from_bytes(frame[3:5], "big")
 
-    if inverter_id != EXPECTED_INVERTER_ID:
+    if inverter_id != expected_inverter_id:
         raise RuntimeError(f"Unexpected inverter_id: {inverter_id}")
 
     if command != 0x02:
         raise RuntimeError(f"Unexpected command: 0x{command:02x}")
 
-    if data_len != EXPECTED_DATA_LEN:
+    if data_len != expected_data_len:
         raise RuntimeError(f"Unexpected data length: {data_len}")
 
-    data_start = 5
-    data_end = data_start + data_len
-    data = frame[data_start:data_end]
-
+    data = frame[5:5 + data_len]
     fault_code = u16(data, 24)
 
     return {
         "@timestamp": datetime.now(timezone.utc).isoformat(),
-
+        "inverter_name": inverter_name,
         "inverter_id": inverter_id,
-
         "pv_voltage_v": u16(data, 0),
         "pv_current_a": u16(data, 2),
         "pv_power_w": u16(data, 4),
-
         "grid_voltage_v": u16(data, 6),
         "grid_current_a": u16(data, 8),
-
         "current_output_w": u16(data, 10),
-
         "power_factor_pct": u16(data, 12) / 10.0,
         "frequency_hz": u16(data, 14) / 10.0,
-
         "total_generation_kwh": u64(data, 16) / 1000.0,
-
         "fault_code": fault_code,
         "fault": fault_code != 0,
-
         "raw_frame_hex": frame.hex(" "),
     }
 
 
-def collect_once(port: str, baudrate: int, timeout: float) -> dict:
+def collect_once(
+    port: str,
+    baudrate: int,
+    timeout: float,
+    request: bytes,
+    inverter_name: str,
+    expected_inverter_id: int,
+    expected_frame_len: int,
+    expected_data_len: int,
+    crc_order: str,
+    verify_crc: bool,
+) -> dict:
     frame = read_frame(
         port=port,
         baudrate=baudrate,
         timeout=timeout,
+        request=request,
+        expected_frame_len=expected_frame_len,
     )
 
-    return parse_frame(frame)
+    return parse_frame(
+        frame=frame,
+        inverter_name=inverter_name,
+        expected_inverter_id=expected_inverter_id,
+        expected_frame_len=expected_frame_len,
+        expected_data_len=expected_data_len,
+        crc_order=crc_order,
+        verify_crc=verify_crc,
+    )
 
 
-def print_json(data: dict) -> None:
-    print(
-        json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2,
+def get_google_credentials_dict() -> dict:
+    private_key = os.getenv("GOOGLE_PRIVATE_KEY")
+
+    if not private_key:
+        raise RuntimeError("GOOGLE_PRIVATE_KEY is not set")
+
+    return {
+        "type": os.getenv("GOOGLE_TYPE", "service_account"),
+        "project_id": os.getenv("GOOGLE_PROJECT_ID"),
+        "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
+        "private_key": private_key.replace("\\n", "\n"),
+        "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+        "auth_uri": os.getenv(
+            "GOOGLE_AUTH_URI",
+            "https://accounts.google.com/o/oauth2/auth",
         ),
-        flush=True,
+        "token_uri": os.getenv(
+            "GOOGLE_TOKEN_URI",
+            "https://oauth2.googleapis.com/token",
+        ),
+        "auth_provider_x509_cert_url": os.getenv(
+            "GOOGLE_AUTH_PROVIDER_X509_CERT_URL",
+            "https://www.googleapis.com/oauth2/v1/certs",
+        ),
+        "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_X509_CERT_URL"),
+        "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN", "googleapis.com"),
+    }
+
+
+def ensure_sheet_headers(worksheet) -> None:
+    existing_headers = worksheet.row_values(1)
+
+    if not existing_headers:
+        worksheet.append_row(SHEET_HEADERS)
+        return
+
+    if existing_headers != SHEET_HEADERS:
+        raise RuntimeError(
+            "Google Sheet header mismatch. "
+            "Please check row 1 manually. "
+            f"expected={SHEET_HEADERS}, actual={existing_headers}"
+        )
+
+
+def get_google_sheet():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    creds = Credentials.from_service_account_info(
+        get_google_credentials_dict(),
+        scopes=scopes,
     )
+
+    client = gspread.authorize(creds)
+
+    spreadsheet_name = os.getenv("GOOGLE_SHEET_NAME")
+    worksheet_name = os.getenv("GOOGLE_WORKSHEET_NAME")
+    client_email = os.getenv("GOOGLE_CLIENT_EMAIL")
+
+    if not spreadsheet_name:
+        raise RuntimeError("GOOGLE_SHEET_NAME is not set")
+
+    if not worksheet_name:
+        raise RuntimeError("GOOGLE_WORKSHEET_NAME is not set")
+
+    try:
+        spreadsheet = client.open(spreadsheet_name)
+        worksheet = spreadsheet.worksheet(worksheet_name)
+        ensure_sheet_headers(worksheet)
+        return worksheet
+
+    except SpreadsheetNotFound:
+        raise RuntimeError(
+            "Google Sheet not found or access denied. "
+            f"sheet_name={spreadsheet_name!r}. "
+            "Check that the spreadsheet exists and is shared with "
+            f"{client_email!r}."
+        )
+
+    except WorksheetNotFound:
+        raise RuntimeError(
+            "Google worksheet not found. "
+            f"worksheet_name={worksheet_name!r}. "
+            "Create the worksheet tab or check GOOGLE_WORKSHEET_NAME."
+        )
+
+    except APIError as e:
+        raise RuntimeError(f"Google Sheets API error. {e}")
+
+
+def write_to_google_sheet(worksheet, data: dict) -> None:
+    worksheet.append_row([
+        data["@timestamp"],
+        data["inverter_name"],
+        data["inverter_id"],
+        data["pv_voltage_v"],
+        data["pv_current_a"],
+        data["pv_power_w"],
+        data["grid_voltage_v"],
+        data["grid_current_a"],
+        data["current_output_w"],
+        data["power_factor_pct"],
+        data["frequency_hz"],
+        data["total_generation_kwh"],
+        data["fault_code"],
+        data["fault"],
+    ])
 
 
 def main() -> None:
+    load_dotenv()
+
+    inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
+    inverter_id = int(os.getenv("INVERTER_ID", "1"))
+    request = parse_hex(os.getenv("INVERTER_REQUEST_HEX", "7e0101d188"))
+    frame_len = int(os.getenv("INVERTER_FRAME_LENGTH", "33"))
+    data_len = int(os.getenv("INVERTER_DATA_LENGTH", "26"))
+    crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
+    verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
+
     parser = argparse.ArgumentParser(
         description="Solar inverter RS485 collector"
     )
@@ -127,7 +322,7 @@ def main() -> None:
     parser.add_argument(
         "-p",
         "--port",
-        default="/dev/ttyUSB0",
+        default=os.getenv("SERIAL_PORT", "/dev/ttyUSB0"),
         help="Serial port. default: /dev/ttyUSB0",
     )
 
@@ -135,7 +330,7 @@ def main() -> None:
         "-b",
         "--baudrate",
         type=int,
-        default=9600,
+        default=int(os.getenv("SERIAL_BAUDRATE", "9600")),
         help="RS485 baudrate. default: 9600",
     )
 
@@ -143,7 +338,7 @@ def main() -> None:
         "-t",
         "--timeout",
         type=float,
-        default=1.0,
+        default=float(os.getenv("SERIAL_TIMEOUT", "1.0")),
         help="Serial read timeout seconds. default: 1.0",
     )
 
@@ -155,7 +350,26 @@ def main() -> None:
         help="Repeat collection interval seconds. If omitted, collect once.",
     )
 
+    parser.add_argument(
+        "--google-sheet",
+        action="store_true",
+        help="Write collected data to Google Sheet",
+    )
+
     args = parser.parse_args()
+
+    worksheet = None
+    if args.google_sheet:
+        try:
+            worksheet = get_google_sheet()
+        except Exception as e:
+            print_json({
+                "@timestamp": datetime.now(timezone.utc).isoformat(),
+                "inverter_name": inverter_name,
+                "error": "Google Sheet initialization failed",
+                "detail": str(e),
+            })
+            return
 
     while True:
         try:
@@ -163,16 +377,26 @@ def main() -> None:
                 port=args.port,
                 baudrate=args.baudrate,
                 timeout=args.timeout,
+                request=request,
+                inverter_name=inverter_name,
+                expected_inverter_id=inverter_id,
+                expected_frame_len=frame_len,
+                expected_data_len=data_len,
+                crc_order=crc_order,
+                verify_crc=verify_crc,
             )
+
             print_json(result)
 
+            if worksheet is not None:
+                write_to_google_sheet(worksheet, result)
+
         except Exception as e:
-            print_json(
-                {
-                    "@timestamp": datetime.now(timezone.utc).isoformat(),
-                    "error": str(e),
-                }
-            )
+            print_json({
+                "@timestamp": datetime.now(timezone.utc).isoformat(),
+                "inverter_name": inverter_name,
+                "error": str(e),
+            })
 
         if args.interval is None:
             break
