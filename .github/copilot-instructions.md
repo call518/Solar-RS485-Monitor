@@ -5,6 +5,7 @@
 - The package entry point is `solar-rs485-monitor`, defined in `pyproject.toml`.
 - Runtime code lives under `src/solar_rs485_monitor/`.
 - The main collector implementation is `src/solar_rs485_monitor/collector.py`.
+- Optional logging sinks live under `src/solar_rs485_monitor/sinks/`.
 
 ## Language Guidelines
 - Use English for code, identifiers, comments, commit messages, and primary documentation unless the user asks otherwise.

@@ -4,6 +4,8 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally append rows to Google Sheets.
 
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, and future sinks like OpenSearch or Elasticsearch.
+
 ## Supported Inverter Scope
 
 The current code was written and tested for InoElectric IEPVS-3.5-G1/G2 inverters.
@@ -221,7 +223,7 @@ The ThingSpeak field mapping is fixed to match the configured channel:
 | `field7` | `total_generation_kwh` |
 | `field8` | `fault_code` |
 
-ThingSpeak may reject updates that are too frequent for your channel. If updates return an error, increase `--interval`.
+ThingSpeak returns `0` when an update is rejected. Common causes are an invalid Write API Key or updates sent too frequently. Use an interval of at least 15 seconds for repeated updates.
 
 ## Google Sheets Configuration
 
@@ -305,6 +307,6 @@ Errors are also printed as JSON:
 - `No response from inverter`: check `SERIAL_PORT`, remote RS485 host IP, TCP port, RS485 wiring, inverter ID, and baud rate.
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
-- `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY`, field mapping, and update interval.
+- `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.
