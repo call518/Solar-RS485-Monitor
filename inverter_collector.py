@@ -80,8 +80,8 @@ def read_frame(
     request: bytes,
     expected_frame_len: int,
 ) -> bytes:
-    with serial.Serial(
-        port=port,
+    with serial.serial_for_url(
+        url=port,
         baudrate=baudrate,
         bytesize=serial.EIGHTBITS,
         parity=serial.PARITY_NONE,
@@ -323,7 +323,11 @@ def main() -> None:
         "-p",
         "--port",
         default=os.getenv("SERIAL_PORT", "/dev/ttyUSB0"),
-        help="Serial port. default: /dev/ttyUSB0",
+        help=(
+            "Serial port or pyserial URL "
+            "(e.g. /dev/ttyUSB0, socket://HOST:9600). "
+            "default: /dev/ttyUSB0"
+        ),
     )
 
     parser.add_argument(
