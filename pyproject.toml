@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=77", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solar-rs485-monitor"
+dynamic = ["version"]
+description = "Solar inverter monitoring script for RS485 serial communication"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "JungJungIn" }
+]
+keywords = [
+    "solar",
+    "inverter",
+    "rs485",
+    "serial",
+    "monitoring",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "google-auth>=2.0",
+    "gspread>=6.0",
+    "pyserial>=3.5",
+    "python-dotenv>=1.0",
+    "pre-commit>=4.6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/call518/Solar-RS485-Monitor"
+Repository = "https://github.com/call518/Solar-RS485-Monitor"
+Issues = "https://github.com/call518/Solar-RS485-Monitor/issues"
+
+[project.scripts]
+solar-rs485-monitor = "solar_rs485_monitor.collector:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools_scm]
+### version_scheme options:
+###   uncommented: raises LookupError (uses fallback_version) when not on a tag
+###   commented-out (default guess-next-dev): auto-generates e.g. 1.0.1.dev2+gabcdef for commits after a tag
+# version_scheme = "no-guess-dev"
+### local_scheme options:
+###   node-and-date      (default)  e.g. 1.0.1.dev2+gabcdef.d20260430
+###   node-and-timestamp            e.g. 1.0.1.dev2+gabcdef.1746000000
+###   dirty-tag                     e.g. 1.0.1.dev2+dirty (only when working tree is dirty)
+###   no-local-version              e.g. 1.0.1.dev2 (omits local part entirely; only this option allows non-tagged commits to be uploaded to PyPI)
+local_scheme = "node-and-date"
+fallback_version = "0.0.0"

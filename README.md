@@ -12,7 +12,7 @@ The request frame, response frame length, data offsets, scaling rules, CRC order
 
 - Request frame: set `INVERTER_REQUEST_HEX` to the product-specific request frame. If your environment describes this as a TCP header or protocol header, treat that product-specific header/request bytes as part of this value.
 - Response validation: set `INVERTER_FRAME_LENGTH`, `INVERTER_DATA_LENGTH`, `INVERTER_CRC_ORDER`, and `INVERTER_ID` according to the product's response format.
-- Response parsing: update `parse_frame()` in [inverter_collector.py](/root/Workspace-RL8/Solar-RS485-Monitor/inverter_collector.py:104) if the product returns fields at different byte offsets, uses different units, or uses different scaling.
+- Response parsing: update `parse_frame()` in [src/solar_rs485_monitor/collector.py](src/solar_rs485_monitor/collector.py) if the product returns fields at different byte offsets, uses different units, or uses different scaling.
 
 Do not assume another RS485 inverter will expose the same data layout just because the serial/TCP connection succeeds.
 
@@ -35,17 +35,23 @@ Create `.env` from the template.
 cp .env.template .env
 ```
 
-Install dependencies. If you are using `uv` and the project `.venv`:
+Install from PyPI after the package is published:
+
+```bash
+pip install solar-rs485-monitor
+```
+
+For local development with `uv` and the project `.venv`:
 
 ```bash
 uv venv --python 3.14 .venv
-uv pip install -r requirements.txt
+uv pip install --python .venv/bin/python -e .
 ```
 
-Run commands with the virtual environment Python:
+Run the installed console command:
 
 ```bash
-.venv/bin/python inverter_collector.py
+solar-rs485-monitor
 ```
 
 ## Serial Configuration
@@ -125,32 +131,51 @@ INVERTER_VERIFY_CRC="true"
 Collect once and print JSON:
 
 ```bash
-.venv/bin/python inverter_collector.py
+solar-rs485-monitor
 ```
 
 Override the port temporarily from the command line:
 
 ```bash
-.venv/bin/python inverter_collector.py --port socket://192.168.35.6:9600
+solar-rs485-monitor --port socket://192.168.35.6:9600
 ```
 
 Repeat collection every 60 seconds:
 
 ```bash
-.venv/bin/python inverter_collector.py --interval 60
+solar-rs485-monitor --interval 60
 ```
 
 Write collected rows to Google Sheets:
 
 ```bash
-.venv/bin/python inverter_collector.py --google-sheet
+solar-rs485-monitor --google-sheet
 ```
 
 Repeat collection and write to Google Sheets:
 
 ```bash
-.venv/bin/python inverter_collector.py --interval 60 --google-sheet
+solar-rs485-monitor --interval 60 --google-sheet
 ```
+
+## Package Build
+
+This project is structured as a PyPI package.
+
+Build the source distribution and wheel:
+
+```bash
+uv build
+```
+
+The build outputs are created under `dist/`:
+
+```text
+dist/solar_rs485_monitor-0.1.0.tar.gz
+dist/solar_rs485_monitor-0.1.0-py3-none-any.whl
+```
+
+PyPI publishing is intentionally not handled by this repository code. Publish from your Git workflow after building and verifying the package.
 
 ## Google Sheets Configuration
 

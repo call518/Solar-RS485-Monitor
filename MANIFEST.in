@@ -1,0 +1,5 @@
+include README.md
+include README.ko.md
+include LICENSE
+include .env.template
+include requirements.txt
