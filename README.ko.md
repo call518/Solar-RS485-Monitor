@@ -235,12 +235,18 @@ solar-rs485-monitor --interval 60 --all-sinks
 systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service)에 있습니다. 기본적으로 60초마다 수집하고 모든 sink를 활성화합니다.
 
 ```ini
-ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --interval 60 --all-sinks
 ```
 
 설치 전에 대상 호스트에 맞게 아래 설정을 수정합니다.
 
-- `Environment=PATH=...`: 설치된 `solar-rs485-monitor` 명령이 있는 디렉터리를 포함합니다. `which solar-rs485-monitor`로 확인합니다.
+- `ExecStart`: 설치된 `solar-rs485-monitor` 명령의 절대 경로를 사용합니다. `command -v solar-rs485-monitor`로 확인합니다.
+
+패키지를 virtualenv 안에 설치했다면 systemd는 현재 쉘의 activate 상태를 물려받지 않습니다. 이 경우 virtualenv 안의 명령 경로를 직접 지정합니다.
+
+```ini
+ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --interval 60 --all-sinks
+```
 
 서비스는 일반 설정 파일 탐색 순서를 사용합니다. 특별한 이유가 없다면 데몬용 설정은 `/etc/solar-rs485-monitor.conf`에 둡니다.
 
@@ -248,6 +254,7 @@ ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor.service /etc/systemd/system/
+sudo sed -i "s|/path/to/solar-rs485-monitor|$(command -v solar-rs485-monitor)|" /etc/systemd/system/solar-rs485-monitor.service
 solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
 sudo chmod 600 /etc/solar-rs485-monitor.conf
 sudo systemctl daemon-reload

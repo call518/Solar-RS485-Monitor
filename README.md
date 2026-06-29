@@ -235,12 +235,18 @@ External logging failures are isolated. If Google Sheets, ThingSpeak, or MariaDB
 A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It runs the collector every 60 seconds and enables all sinks:
 
 ```ini
-ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --interval 60 --all-sinks
 ```
 
 Before installing it, edit this setting for the target host:
 
-- `Environment=PATH=...`: include the directory that contains the installed `solar-rs485-monitor` command. Check it with `which solar-rs485-monitor`.
+- `ExecStart`: use the absolute path to the installed `solar-rs485-monitor` command. Check it with `command -v solar-rs485-monitor`.
+
+If the package is installed inside a virtualenv, systemd does not inherit your activated shell. Use the virtualenv command path directly, for example:
+
+```ini
+ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --interval 60 --all-sinks
+```
 
 The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable.
 
@@ -248,6 +254,7 @@ Example install commands:
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor.service /etc/systemd/system/
+sudo sed -i "s|/path/to/solar-rs485-monitor|$(command -v solar-rs485-monitor)|" /etc/systemd/system/solar-rs485-monitor.service
 solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
 sudo chmod 600 /etc/solar-rs485-monitor.conf
 sudo systemctl daemon-reload

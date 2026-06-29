@@ -6,8 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --interval 60 --all-sinks
 Restart=always
 RestartSec=10
 SyslogIdentifier=solar-rs485-monitor
