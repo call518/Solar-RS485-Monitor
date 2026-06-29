@@ -5,6 +5,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import serial
 from dotenv import load_dotenv
@@ -12,6 +13,10 @@ from dotenv import load_dotenv
 from solar_rs485_monitor.sinks.google_sheets import (
     get_google_sheet,
     write_to_google_sheet,
+)
+from solar_rs485_monitor.sinks.mariadb import (
+    get_mariadb_config,
+    write_to_mariadb,
 )
 from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
@@ -190,7 +195,7 @@ def collect_once(
 
 
 def main() -> None:
-    load_dotenv()
+    load_dotenv(dotenv_path=Path.cwd() / ".env", override=True)
 
     inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
     inverter_id = int(os.getenv("INVERTER_ID", "1"))
@@ -256,6 +261,12 @@ def main() -> None:
         help="Write collected data to ThingSpeak",
     )
 
+    parser.add_argument(
+        "--mariadb",
+        action="store_true",
+        help="Write collected data to MariaDB",
+    )
+
     args = parser.parse_args()
 
     worksheet = None
@@ -266,6 +277,17 @@ def main() -> None:
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="google_sheet",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
+
+    mariadb_config = None
+    if args.mariadb:
+        try:
+            mariadb_config = get_mariadb_config()
+        except Exception as e:
+            print_sink_error(
+                inverter_name=inverter_name,
+                sink="mariadb",
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -314,6 +336,25 @@ def main() -> None:
                     print_sink_error(
                         inverter_name=inverter_name,
                         sink="thingspeak",
+                        error=e,
+                    )
+
+            if mariadb_config is not None:
+                try:
+                    mariadb_insert_id = write_to_mariadb(
+                        data=result,
+                        config=mariadb_config,
+                    )
+                    print_json({
+                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                        "inverter_name": inverter_name,
+                        "sink": "mariadb",
+                        "mariadb_insert_id": mariadb_insert_id,
+                    })
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="mariadb",
                         error=e,
                     )
 

@@ -2,9 +2,9 @@
 
 Solar inverter monitoring script for RS485/serial communication.
 
-The collector reads inverter data, prints the parsed result as JSON, and can optionally append rows to Google Sheets.
+The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, and future sinks like OpenSearch or Elasticsearch.
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, MariaDB, and future sinks like OpenSearch or Elasticsearch.
 
 ## Supported Inverter Scope
 
@@ -168,6 +168,12 @@ Write collected data to ThingSpeak:
 solar-rs485-monitor --thingspeak
 ```
 
+Write collected data to MariaDB:
+
+```bash
+solar-rs485-monitor --mariadb
+```
+
 Repeat collection and write to Google Sheets:
 
 ```bash
@@ -180,7 +186,19 @@ Repeat collection and write to ThingSpeak:
 solar-rs485-monitor --interval 60 --thingspeak
 ```
 
-External logging failures are isolated. If Google Sheets or ThingSpeak fails because of a missing API key, authentication error, network error, or rate limit, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
+Repeat collection and write to MariaDB:
+
+```bash
+solar-rs485-monitor --interval 60 --mariadb
+```
+
+Multiple sinks can be enabled together:
+
+```bash
+solar-rs485-monitor --interval 60 --google-sheet --thingspeak --mariadb
+```
+
+External logging failures are isolated. If Google Sheets, ThingSpeak, or MariaDB fails because of a missing credential, authentication error, network error, rate limit, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
 
 ## Package Build
 
@@ -224,6 +242,24 @@ The ThingSpeak field mapping is fixed to match the configured channel:
 | `field8` | `fault_code` |
 
 ThingSpeak returns `0` when an update is rejected. Common causes are an invalid Write API Key or updates sent too frequently. Use an interval of at least 15 seconds for repeated updates.
+
+## MariaDB Configuration
+
+To use `--mariadb`, configure these values in `.env`:
+
+```env
+MARIADB_HOST="132.145.80.109"
+MARIADB_PORT="3306"
+MARIADB_USER="solar_logger"
+MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
+MARIADB_DATABASE="solar_rs485_monitor"
+MARIADB_TABLE="inverter_log"
+MARIADB_CONNECT_TIMEOUT="5.0"
+```
+
+The sink expects the `inverter_log` table to already exist with columns matching the current collected metrics. It inserts only the parsed metric fields defined by the table schema; `raw_frame_hex` is printed in JSON for debugging but is not stored in MariaDB unless the table and sink are extended.
+
+The database user only needs `INSERT` for normal logging. `SELECT` can be useful for verification and dashboards.
 
 ## Google Sheets Configuration
 
@@ -308,5 +344,7 @@ Errors are also printed as JSON:
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
+- `MARIADB_PASSWORD is not set`: set the MariaDB password in `.env` before running with `--mariadb`.
+- `MariaDB logging failed`: check `MARIADB_HOST`, `MARIADB_PORT`, firewall rules, database grants, username, password, database name, and table name.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.

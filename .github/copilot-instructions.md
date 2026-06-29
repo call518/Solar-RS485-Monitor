@@ -18,7 +18,7 @@
 - `.env.template` and `.env` should keep the same structure and key order.
 - `.env.template` contains placeholders and safe examples.
 - `.env` contains local real values and must not be committed.
-- Optional output sinks are enabled with CLI flags: `--google-sheet` and `--thingspeak`.
+- Optional output sinks are enabled with CLI flags: `--google-sheet`, `--thingspeak`, and `--mariadb`.
 - Serial access is selected through `SERIAL_PORT`.
   - Local USB example: `/dev/ttyUSB0`
   - TCP-forwarded RS485 host example: `socket://RS485_HOST_IP:9600`
