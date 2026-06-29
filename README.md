@@ -114,11 +114,19 @@ The inverter request and expected response format are also configured in `.env`.
 ```env
 INVERTER_NAME="YOUR_INVERTER_NAME"
 INVERTER_ID="1"
-INVERTER_REQUEST_HEX="7e0101d188"
+INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
 INVERTER_FRAME_LENGTH="33"
 INVERTER_DATA_LENGTH="26"
 INVERTER_CRC_ORDER="LH"
 ```
+
+For the tested InoElectric IEPVS-3.5-G1/G2 setup, the request frame is:
+
+```env
+INVERTER_REQUEST_HEX="7e0101d188"
+```
+
+Use a different value if your inverter manual specifies a different request frame.
 
 `INVERTER_VERIFY_CRC` is optional and defaults to `true`.
 
@@ -152,11 +160,25 @@ Write collected rows to Google Sheets:
 solar-rs485-monitor --google-sheet
 ```
 
+Write collected data to ThingSpeak:
+
+```bash
+solar-rs485-monitor --thingspeak
+```
+
 Repeat collection and write to Google Sheets:
 
 ```bash
 solar-rs485-monitor --interval 60 --google-sheet
 ```
+
+Repeat collection and write to ThingSpeak:
+
+```bash
+solar-rs485-monitor --interval 60 --thingspeak
+```
+
+External logging failures are isolated. If Google Sheets or ThingSpeak fails because of a missing API key, authentication error, network error, or rate limit, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
 
 ## Package Build
 
@@ -171,11 +193,35 @@ uv build
 The build outputs are created under `dist/`:
 
 ```text
-dist/solar_rs485_monitor-0.1.0.tar.gz
-dist/solar_rs485_monitor-0.1.0-py3-none-any.whl
+dist/solar_rs485_monitor-VERSION.tar.gz
+dist/solar_rs485_monitor-VERSION-py3-none-any.whl
 ```
 
-PyPI publishing is intentionally not handled by this repository code. Publish from your Git workflow after building and verifying the package.
+PyPI publishing can be handled by the GitHub Actions workflow in `.github/workflows/pypi-publish.yml`, or manually with `uv publish` after building and verifying the package.
+
+## ThingSpeak Configuration
+
+To use `--thingspeak`, configure a ThingSpeak Write API Key in `.env`.
+
+```env
+THINGSPEAK_API_KEY="YOUR_THINGSPEAK_WRITE_API_KEY"
+THINGSPEAK_TIMEOUT="5.0"
+```
+
+The ThingSpeak field mapping is fixed to match the configured channel:
+
+| ThingSpeak field | Metric |
+| --- | --- |
+| `field1` | `pv_voltage_v` |
+| `field2` | `pv_current_a` |
+| `field3` | `pv_power_w` |
+| `field4` | `grid_voltage_v` |
+| `field5` | `grid_current_a` |
+| `field6` | `current_output_w` |
+| `field7` | `total_generation_kwh` |
+| `field8` | `fault_code` |
+
+ThingSpeak may reject updates that are too frequent for your channel. If updates return an error, increase `--interval`.
 
 ## Google Sheets Configuration
 
@@ -259,5 +305,6 @@ Errors are also printed as JSON:
 - `No response from inverter`: check `SERIAL_PORT`, remote RS485 host IP, TCP port, RS485 wiring, inverter ID, and baud rate.
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
+- `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY`, field mapping, and update interval.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.

@@ -5,6 +5,8 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import gspread
 import serial
@@ -29,6 +31,17 @@ SHEET_HEADERS = [
     "fault_code",
     "fault",
 ]
+
+DEFAULT_THINGSPEAK_FIELD_MAP = {
+    "field1": "pv_voltage_v",
+    "field2": "pv_current_a",
+    "field3": "pv_power_w",
+    "field4": "grid_voltage_v",
+    "field5": "grid_current_a",
+    "field6": "current_output_w",
+    "field7": "total_generation_kwh",
+    "field8": "fault_code",
+}
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -59,6 +72,15 @@ def env_bool(name: str, default: str = "false") -> bool:
 
 def print_json(data: dict) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
+
+
+def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
+    print_json({
+        "@timestamp": datetime.now(timezone.utc).isoformat(),
+        "inverter_name": inverter_name,
+        "sink": sink,
+        "error": str(error),
+    })
 
 
 def get_crc_from_frame(frame: bytes, crc_order: str) -> int:
@@ -304,12 +326,56 @@ def write_to_google_sheet(worksheet, data: dict) -> None:
     ])
 
 
+def get_thingspeak_field_map() -> dict:
+    return DEFAULT_THINGSPEAK_FIELD_MAP.copy()
+
+
+def write_to_thingspeak(
+    data: dict,
+    api_key: str,
+    field_map: dict,
+    timeout: float,
+) -> int:
+    if not api_key:
+        raise RuntimeError("THINGSPEAK_API_KEY is not set")
+
+    params = {"api_key": api_key}
+
+    for field_name, metric_name in field_map.items():
+        if metric_name not in data:
+            raise RuntimeError(
+                f"ThingSpeak metric not found: {metric_name}"
+            )
+
+        params[field_name] = data[metric_name]
+
+    url = "https://api.thingspeak.com/update?" + urlencode(params)
+
+    with urlopen(url, timeout=timeout) as response:
+        response_body = response.read().decode("utf-8").strip()
+
+    try:
+        entry_id = int(response_body)
+    except ValueError:
+        raise RuntimeError(f"Unexpected ThingSpeak response: {response_body}")
+
+    if entry_id == 0:
+        raise RuntimeError("ThingSpeak update rejected")
+
+    return entry_id
+
+
 def main() -> None:
     load_dotenv()
 
     inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
     inverter_id = int(os.getenv("INVERTER_ID", "1"))
-    request = parse_hex(os.getenv("INVERTER_REQUEST_HEX", "7e0101d188"))
+    request_hex = os.getenv("INVERTER_REQUEST_HEX")
+
+    if not request_hex:
+        raise RuntimeError("INVERTER_REQUEST_HEX is not set")
+
+    request = parse_hex(request_hex)
     frame_len = int(os.getenv("INVERTER_FRAME_LENGTH", "33"))
     data_len = int(os.getenv("INVERTER_DATA_LENGTH", "26"))
     crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
@@ -360,6 +426,12 @@ def main() -> None:
         help="Write collected data to Google Sheet",
     )
 
+    parser.add_argument(
+        "--thingspeak",
+        action="store_true",
+        help="Write collected data to ThingSpeak",
+    )
+
     args = parser.parse_args()
 
     worksheet = None
@@ -367,13 +439,11 @@ def main() -> None:
         try:
             worksheet = get_google_sheet()
         except Exception as e:
-            print_json({
-                "@timestamp": datetime.now(timezone.utc).isoformat(),
-                "inverter_name": inverter_name,
-                "error": "Google Sheet initialization failed",
-                "detail": str(e),
-            })
-            return
+            print_sink_error(
+                inverter_name=inverter_name,
+                sink="google_sheet",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
 
     while True:
         try:
@@ -393,7 +463,35 @@ def main() -> None:
             print_json(result)
 
             if worksheet is not None:
-                write_to_google_sheet(worksheet, result)
+                try:
+                    write_to_google_sheet(worksheet, result)
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="google_sheet",
+                        error=e,
+                    )
+
+            if args.thingspeak:
+                try:
+                    thingspeak_entry_id = write_to_thingspeak(
+                        data=result,
+                        api_key=os.getenv("THINGSPEAK_API_KEY", ""),
+                        field_map=get_thingspeak_field_map(),
+                        timeout=float(os.getenv("THINGSPEAK_TIMEOUT", "5.0")),
+                    )
+                    print_json({
+                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                        "inverter_name": inverter_name,
+                        "sink": "thingspeak",
+                        "thingspeak_entry_id": thingspeak_entry_id,
+                    })
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="thingspeak",
+                        error=e,
+                    )
 
         except Exception as e:
             print_json({
