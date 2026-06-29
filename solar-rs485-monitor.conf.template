@@ -11,6 +11,7 @@ SERIAL_PORT="/dev/ttyUSB0"
 # Serial Speed & Timeout
 SERIAL_BAUDRATE="9600"
 SERIAL_TIMEOUT="1.0"
+SERIAL_READ_RETRIES="2"
 
 #
 # Inverter Protocol

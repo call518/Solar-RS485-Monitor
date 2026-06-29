@@ -5,6 +5,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from importlib.resources import files
 from pathlib import Path
 
 import serial
@@ -22,6 +23,9 @@ from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
 )
+
+CONFIG_FILENAME = "solar-rs485-monitor.conf"
+CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -54,13 +58,41 @@ def print_json(data: dict) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
 
 
+def print_section(title: str) -> None:
+    print(f"\n== {title} ==", flush=True)
+
+
+def print_section_json(title: str, data: dict) -> None:
+    print_section(title)
+    print_json(data)
+
+
 def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
-    print_json({
+    print_section_json(sink, {
         "@timestamp": datetime.now(timezone.utc).isoformat(),
         "inverter_name": inverter_name,
         "sink": sink,
         "error": str(error),
     })
+
+
+def get_config_path() -> Path | None:
+    system_config = Path("/etc") / CONFIG_FILENAME
+
+    if system_config.is_file():
+        return system_config
+
+    current_config = Path.cwd() / CONFIG_FILENAME
+
+    if current_config.is_file():
+        return current_config
+
+    return None
+
+
+def print_config_template() -> None:
+    template = files("solar_rs485_monitor").joinpath(CONFIG_TEMPLATE_FILENAME)
+    print(template.read_text(encoding="utf-8"), end="")
 
 
 def get_crc_from_frame(frame: bytes, crc_order: str) -> int:
@@ -102,6 +134,16 @@ def read_frame(
     return frame
 
 
+def is_retryable_frame_error(error: Exception) -> bool:
+    message = str(error)
+    return message.startswith((
+        "CRC mismatch",
+        "Incomplete frame",
+        "Invalid SOP",
+        "No response from inverter",
+    ))
+
+
 def parse_frame(
     frame: bytes,
     inverter_name: str,
@@ -112,7 +154,10 @@ def parse_frame(
     verify_crc: bool,
 ) -> dict:
     if len(frame) < expected_frame_len:
-        raise RuntimeError(f"Incomplete frame: {len(frame)} bytes")
+        raise RuntimeError(
+            f"Incomplete frame: {len(frame)} bytes "
+            f"raw_frame_hex={frame.hex(' ')}"
+        )
 
     if verify_crc:
         received_crc = get_crc_from_frame(frame, crc_order)
@@ -122,11 +167,16 @@ def parse_frame(
             raise RuntimeError(
                 "CRC mismatch "
                 f"received=0x{received_crc:04x} "
-                f"calculated=0x{calculated_crc:04x}"
+                f"calculated=0x{calculated_crc:04x} "
+                f"frame_len={len(frame)} "
+                f"raw_frame_hex={frame.hex(' ')}"
             )
 
     if frame[0] != 0x7E:
-        raise RuntimeError(f"Invalid SOP: 0x{frame[0]:02x}")
+        raise RuntimeError(
+            f"Invalid SOP: 0x{frame[0]:02x} "
+            f"raw_frame_hex={frame.hex(' ')}"
+        )
 
     inverter_id = frame[1]
     command = frame[2]
@@ -174,44 +224,50 @@ def collect_once(
     expected_data_len: int,
     crc_order: str,
     verify_crc: bool,
+    read_retries: int,
 ) -> dict:
-    frame = read_frame(
-        port=port,
-        baudrate=baudrate,
-        timeout=timeout,
-        request=request,
-        expected_frame_len=expected_frame_len,
-    )
+    for attempt in range(read_retries + 1):
+        try:
+            frame = read_frame(
+                port=port,
+                baudrate=baudrate,
+                timeout=timeout,
+                request=request,
+                expected_frame_len=expected_frame_len,
+            )
 
-    return parse_frame(
-        frame=frame,
-        inverter_name=inverter_name,
-        expected_inverter_id=expected_inverter_id,
-        expected_frame_len=expected_frame_len,
-        expected_data_len=expected_data_len,
-        crc_order=crc_order,
-        verify_crc=verify_crc,
-    )
+            return parse_frame(
+                frame=frame,
+                inverter_name=inverter_name,
+                expected_inverter_id=expected_inverter_id,
+                expected_frame_len=expected_frame_len,
+                expected_data_len=expected_data_len,
+                crc_order=crc_order,
+                verify_crc=verify_crc,
+            )
+
+        except RuntimeError as e:
+            if attempt >= read_retries or not is_retryable_frame_error(e):
+                raise
+
+            time.sleep(0.2)
+
+    raise RuntimeError("Failed to collect inverter frame")
 
 
 def main() -> None:
-    load_dotenv(dotenv_path=Path.cwd() / ".env", override=True)
-
-    inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
-    inverter_id = int(os.getenv("INVERTER_ID", "1"))
-    request_hex = os.getenv("INVERTER_REQUEST_HEX")
-
-    if not request_hex:
-        raise RuntimeError("INVERTER_REQUEST_HEX is not set")
-
-    request = parse_hex(request_hex)
-    frame_len = int(os.getenv("INVERTER_FRAME_LENGTH", "33"))
-    data_len = int(os.getenv("INVERTER_DATA_LENGTH", "26"))
-    crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
-    verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
+    config_path = get_config_path()
+    if config_path is not None:
+        load_dotenv(dotenv_path=config_path, override=True)
 
     parser = argparse.ArgumentParser(
         description="Solar inverter RS485 collector"
+    )
+
+    parser.add_argument(
+        "--print-config-template",
+        action="store_true",
+        help="Print the default configuration template and exit",
     )
 
     parser.add_argument(
@@ -267,7 +323,36 @@ def main() -> None:
         help="Write collected data to MariaDB",
     )
 
+    parser.add_argument(
+        "--all-sinks",
+        action="store_true",
+        help="Write collected data to all configured sinks",
+    )
+
     args = parser.parse_args()
+
+    if args.print_config_template:
+        print_config_template()
+        return
+
+    inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
+    inverter_id = int(os.getenv("INVERTER_ID", "1"))
+    request_hex = os.getenv("INVERTER_REQUEST_HEX")
+
+    if not request_hex:
+        raise RuntimeError("INVERTER_REQUEST_HEX is not set")
+
+    request = parse_hex(request_hex)
+    frame_len = int(os.getenv("INVERTER_FRAME_LENGTH", "33"))
+    data_len = int(os.getenv("INVERTER_DATA_LENGTH", "26"))
+    crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
+    verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
+    read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
+
+    if args.all_sinks:
+        args.google_sheet = True
+        args.thingspeak = True
+        args.mariadb = True
 
     worksheet = None
     if args.google_sheet:
@@ -304,13 +389,20 @@ def main() -> None:
                 expected_data_len=data_len,
                 crc_order=crc_order,
                 verify_crc=verify_crc,
+                read_retries=read_retries,
             )
 
-            print_json(result)
+            print_section_json("inverter", result)
 
             if worksheet is not None:
                 try:
                     write_to_google_sheet(worksheet, result)
+                    print_section_json("google_sheet", {
+                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                        "inverter_name": inverter_name,
+                        "sink": "google_sheet",
+                        "status": "written",
+                    })
                 except Exception as e:
                     print_sink_error(
                         inverter_name=inverter_name,
@@ -326,7 +418,7 @@ def main() -> None:
                         field_map=get_thingspeak_field_map(),
                         timeout=float(os.getenv("THINGSPEAK_TIMEOUT", "5.0")),
                     )
-                    print_json({
+                    print_section_json("thingspeak", {
                         "@timestamp": datetime.now(timezone.utc).isoformat(),
                         "inverter_name": inverter_name,
                         "sink": "thingspeak",
@@ -345,7 +437,7 @@ def main() -> None:
                         data=result,
                         config=mariadb_config,
                     )
-                    print_json({
+                    print_section_json("mariadb", {
                         "@timestamp": datetime.now(timezone.utc).isoformat(),
                         "inverter_name": inverter_name,
                         "sink": "mariadb",
@@ -359,7 +451,7 @@ def main() -> None:
                     )
 
         except Exception as e:
-            print_json({
+            print_section_json("collector", {
                 "@timestamp": datetime.now(timezone.utc).isoformat(),
                 "inverter_name": inverter_name,
                 "error": str(e),

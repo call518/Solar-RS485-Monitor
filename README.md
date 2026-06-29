@@ -20,7 +20,7 @@ Do not assume another RS485 inverter will expose the same data layout just becau
 
 ## Current Connection Modes
 
-The serial connection is configured with `SERIAL_PORT` in `.env`.
+The serial connection is configured with `SERIAL_PORT` in `solar-rs485-monitor.conf`.
 
 Two modes are supported:
 
@@ -29,13 +29,31 @@ Two modes are supported:
 
 Internally, the code uses `pyserial`'s `serial_for_url()`, so both a normal device path and a pyserial URL work with the same setting.
 
-## Setup
+## Configuration File
 
-Create `.env` from the template.
+Runtime configuration uses `solar-rs485-monitor.conf` format, parsed with `python-dotenv`.
+
+Configuration lookup order:
+
+1. `/etc/solar-rs485-monitor.conf`
+2. `solar-rs485-monitor.conf` in the current working directory where the command is run
+
+For a system-wide PyPI installation, create the config under `/etc`:
 
 ```bash
-cp .env.template .env
+solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
+sudo chmod 600 /etc/solar-rs485-monitor.conf
 ```
+
+For local development or a source checkout, keep the config in the directory where you run the command:
+
+```bash
+cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
+```
+
+The local `solar-rs485-monitor.conf` contains real credentials and must not be committed.
+
+## Setup
 
 Install from PyPI after the package is published:
 
@@ -58,7 +76,7 @@ solar-rs485-monitor
 
 ## Serial Configuration
 
-Edit `.env` and enable exactly one `SERIAL_PORT` line.
+Edit `solar-rs485-monitor.conf` and enable exactly one `SERIAL_PORT` line.
 
 For direct USB access:
 
@@ -91,7 +109,7 @@ In this project setup, the remote RS485 host is the device physically connected 
 /usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
 ```
 
-Then set `.env` in the WSL development environment:
+Then set `solar-rs485-monitor.conf` in the WSL development environment:
 
 ```env
 SERIAL_PORT="socket://RS485_HOST_IP:9600"
@@ -111,7 +129,7 @@ If the inverter does not respond over TCP, also check that the remote RS485 host
 
 ## Inverter Protocol Configuration
 
-The inverter request and expected response format are also configured in `.env`.
+The inverter request and expected response format are also configured in `solar-rs485-monitor.conf`.
 
 ```env
 INVERTER_NAME="YOUR_INVERTER_NAME"
@@ -198,7 +216,48 @@ Multiple sinks can be enabled together:
 solar-rs485-monitor --interval 60 --google-sheet --thingspeak --mariadb
 ```
 
+Or enable every configured sink with one option:
+
+```bash
+solar-rs485-monitor --interval 60 --all-sinks
+```
+
 External logging failures are isolated. If Google Sheets, ThingSpeak, or MariaDB fails because of a missing credential, authentication error, network error, rate limit, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
+
+## systemd Service
+
+A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It runs the collector every 60 seconds and enables all sinks:
+
+```ini
+ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
+```
+
+Before installing it, edit this setting for the target host:
+
+- `Environment=PATH=...`: include the directory that contains the installed `solar-rs485-monitor` command. Check it with `which solar-rs485-monitor`.
+
+The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable.
+
+Example install commands:
+
+```bash
+sudo cp packaging/systemd/solar-rs485-monitor.service /etc/systemd/system/
+solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
+sudo chmod 600 /etc/solar-rs485-monitor.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now solar-rs485-monitor
+```
+
+Service control commands:
+
+```bash
+sudo systemctl status solar-rs485-monitor
+sudo systemctl stop solar-rs485-monitor
+sudo systemctl start solar-rs485-monitor
+sudo journalctl -u solar-rs485-monitor -f
+```
+
+If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--mariadb` or `--thingspeak --mariadb`.
 
 ## Package Build
 
@@ -221,7 +280,7 @@ PyPI publishing can be handled by the GitHub Actions workflow in `.github/workfl
 
 ## ThingSpeak Configuration
 
-To use `--thingspeak`, configure a ThingSpeak Write API Key in `.env`.
+To use `--thingspeak`, configure a ThingSpeak Write API Key in `solar-rs485-monitor.conf`.
 
 ```env
 THINGSPEAK_API_KEY="YOUR_THINGSPEAK_WRITE_API_KEY"
@@ -245,7 +304,7 @@ ThingSpeak returns `0` when an update is rejected. Common causes are an invalid 
 
 ## MariaDB Configuration
 
-To use `--mariadb`, configure these values in `.env`:
+To use `--mariadb`, configure these values in `solar-rs485-monitor.conf`:
 
 ```env
 MARIADB_HOST="132.145.80.109"
@@ -263,14 +322,14 @@ The database user only needs `INSERT` for normal logging. `SELECT` can be useful
 
 ## Google Sheets Configuration
 
-To use `--google-sheet`, configure these values in `.env`:
+To use `--google-sheet`, configure these values in `solar-rs485-monitor.conf`:
 
 ```env
 GOOGLE_SHEET_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
 GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
 ```
 
-Also provide the Google service account fields from `.env.template`.
+Also provide the Google service account fields from `solar-rs485-monitor.conf.template`.
 
 The spreadsheet must be shared with the service account email:
 
@@ -344,7 +403,7 @@ Errors are also printed as JSON:
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
-- `MARIADB_PASSWORD is not set`: set the MariaDB password in `.env` before running with `--mariadb`.
+- `MARIADB_PASSWORD is not set`: set the MariaDB password in `solar-rs485-monitor.conf` before running with `--mariadb`.
 - `MariaDB logging failed`: check `MARIADB_HOST`, `MARIADB_PORT`, firewall rules, database grants, username, password, database name, and table name.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.

@@ -1,0 +1,16 @@
+[Unit]
+Description=Solar RS485 Monitor
+Documentation=https://github.com/call518/Solar-RS485-Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env solar-rs485-monitor --interval 60 --all-sinks
+Restart=always
+RestartSec=10
+SyslogIdentifier=solar-rs485-monitor
+
+[Install]
+WantedBy=multi-user.target

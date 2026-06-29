@@ -14,11 +14,13 @@
 - Respond to the user in Korean unless they explicitly request another language.
 
 ## Configuration
-- Runtime configuration is loaded from `.env` with `python-dotenv`.
-- `.env.template` and `.env` should keep the same structure and key order.
-- `.env.template` contains placeholders and safe examples.
-- `.env` contains local real values and must not be committed.
+- Runtime configuration is loaded from `solar-rs485-monitor.conf` with `python-dotenv`.
+- Configuration lookup order is `/etc/solar-rs485-monitor.conf`, then `solar-rs485-monitor.conf` in the current working directory.
+- `solar-rs485-monitor.conf.template` and `solar-rs485-monitor.conf` should keep the same structure and key order.
+- `solar-rs485-monitor.conf.template` contains placeholders and safe examples.
+- `solar-rs485-monitor.conf` contains local real values and must not be committed.
 - Optional output sinks are enabled with CLI flags: `--google-sheet`, `--thingspeak`, and `--mariadb`.
+- `--all-sinks` enables every current sink and is used by the sample systemd service.
 - Serial access is selected through `SERIAL_PORT`.
   - Local USB example: `/dev/ttyUSB0`
   - TCP-forwarded RS485 host example: `socket://RS485_HOST_IP:9600`

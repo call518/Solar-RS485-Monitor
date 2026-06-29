@@ -150,6 +150,7 @@ activemq-data/
 # Environments
 .env
 .envrc
+solar-rs485-monitor.conf
 .venv
 env/
 venv/
