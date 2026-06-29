@@ -74,6 +74,12 @@ uv pip install --python .venv/bin/python -e .
 solar-rs485-monitor
 ```
 
+의존성이 설치되어 있다면 소스 체크아웃에서 직접 실행할 수도 있습니다.
+
+```bash
+python src/solar_rs485_monitor/collector.py
+```
+
 ## 시리얼 설정
 
 `solar-rs485-monitor.conf`를 수정해서 `SERIAL_PORT` 한 줄만 활성화합니다.

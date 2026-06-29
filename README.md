@@ -74,6 +74,12 @@ Run the installed console command:
 solar-rs485-monitor
 ```
 
+You can also run directly from a source checkout after installing dependencies:
+
+```bash
+python src/solar_rs485_monitor/collector.py
+```
+
 ## Serial Configuration
 
 Edit `solar-rs485-monitor.conf` and enable exactly one `SERIAL_PORT` line.
