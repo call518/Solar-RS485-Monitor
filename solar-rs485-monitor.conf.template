@@ -1,4 +1,11 @@
 #
+# General
+#
+# IANA timezone name used for generated timestamps.
+# Examples: Asia/Seoul, UTC, America/Los_Angeles
+TIMEZONE="Asia/Seoul"
+
+#
 # Serial (RS485)
 #
 # Use a local USB adapter, or connect over TCP to the RS485 USB adapter
@@ -39,6 +46,16 @@ MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
 MARIADB_DATABASE="solar_rs485_monitor"
 MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
+
+#
+# OpenSearch / Elasticsearch
+#
+OPENSEARCH_URL="https://YOUR_OPENSEARCH_HOST:9200"
+OPENSEARCH_INDEX="solar-rs485-monitor"
+OPENSEARCH_USERNAME=""
+OPENSEARCH_PASSWORD=""
+OPENSEARCH_TIMEOUT="5.0"
+OPENSEARCH_VERIFY_TLS="true"
 
 #
 # Google Sheets

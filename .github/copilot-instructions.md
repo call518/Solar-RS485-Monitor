@@ -19,7 +19,7 @@
 - `solar-rs485-monitor.conf.template` and `solar-rs485-monitor.conf` should keep the same structure and key order.
 - `solar-rs485-monitor.conf.template` contains placeholders and safe examples.
 - `solar-rs485-monitor.conf` contains local real values and must not be committed.
-- Optional output sinks are enabled with CLI flags: `--google-sheet`, `--thingspeak`, and `--mariadb`.
+- Optional output sinks are enabled with CLI flags: `--google-sheet`, `--thingspeak`, `--mariadb`, and `--opensearch`.
 - `--all-sinks` enables every current sink and is used by the sample systemd service.
 - Serial access is selected through `SERIAL_PORT`.
   - Local USB example: `/dev/ttyUSB0`

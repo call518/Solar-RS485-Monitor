@@ -4,7 +4,7 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, MariaDB, and future sinks like OpenSearch or Elasticsearch.
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
 
 ## Supported Inverter Scope
 
@@ -52,6 +52,14 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 ```
 
 The local `solar-rs485-monitor.conf` contains real credentials and must not be committed.
+
+General settings:
+
+```env
+TIMEZONE="Asia/Seoul"
+```
+
+`TIMEZONE` must be an IANA timezone name such as `Asia/Seoul`, `UTC`, or `America/Los_Angeles`. Generated `@timestamp` values use this timezone and include the UTC offset, for example `+09:00` for Korea.
 
 ## Setup
 
@@ -198,6 +206,12 @@ Write collected data to MariaDB:
 solar-rs485-monitor --mariadb
 ```
 
+Write collected data to OpenSearch or Elasticsearch:
+
+```bash
+solar-rs485-monitor --opensearch
+```
+
 Repeat collection and write to Google Sheets:
 
 ```bash
@@ -216,10 +230,16 @@ Repeat collection and write to MariaDB:
 solar-rs485-monitor --interval 60 --mariadb
 ```
 
+Repeat collection and write to OpenSearch or Elasticsearch:
+
+```bash
+solar-rs485-monitor --interval 60 --opensearch
+```
+
 Multiple sinks can be enabled together:
 
 ```bash
-solar-rs485-monitor --interval 60 --google-sheet --thingspeak --mariadb
+solar-rs485-monitor --interval 60 --google-sheet --thingspeak --mariadb --opensearch
 ```
 
 Or enable every configured sink with one option:
@@ -228,7 +248,9 @@ Or enable every configured sink with one option:
 solar-rs485-monitor --interval 60 --all-sinks
 ```
 
-External logging failures are isolated. If Google Sheets, ThingSpeak, or MariaDB fails because of a missing credential, authentication error, network error, rate limit, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
+With `--all-sinks`, OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
+
+External logging failures are isolated. If Google Sheets, ThingSpeak, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
 
 ## systemd Service
 
@@ -270,7 +292,7 @@ sudo systemctl start solar-rs485-monitor
 sudo journalctl -u solar-rs485-monitor -f
 ```
 
-If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--mariadb` or `--thingspeak --mariadb`.
+If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--mariadb` or `--thingspeak --mariadb --opensearch`.
 
 ## Package Build
 
@@ -333,6 +355,68 @@ The sink expects the `inverter_log` table to already exist with columns matching
 
 The database user only needs `INSERT` for normal logging. `SELECT` can be useful for verification and dashboards.
 
+Example MariaDB schema and logging user:
+
+```sql
+CREATE DATABASE IF NOT EXISTS solar_rs485_monitor
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_general_ci;
+
+USE solar_rs485_monitor;
+
+CREATE TABLE IF NOT EXISTS inverter_log (
+    id                   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    timestamp            DATETIME(6) NOT NULL COMMENT 'Measurement time based on the TIMEZONE setting',
+    inverter_name        VARCHAR(100) NOT NULL,
+    inverter_id          TINYINT UNSIGNED NOT NULL,
+    pv_voltage_v         SMALLINT UNSIGNED COMMENT 'PV voltage (V)',
+    pv_current_a         FLOAT(5,2) COMMENT 'PV current (A)',
+    pv_power_w           INT UNSIGNED COMMENT 'PV power (W)',
+    grid_voltage_v       SMALLINT UNSIGNED COMMENT 'Grid voltage (V)',
+    grid_current_a       FLOAT(5,2) COMMENT 'Grid current (A)',
+    current_output_w     INT UNSIGNED COMMENT 'Current AC output power (W)',
+    power_factor_pct     FLOAT(5,2) COMMENT 'Power factor (%)',
+    frequency_hz         FLOAT(5,2) COMMENT 'Frequency (Hz)',
+    total_generation_kwh FLOAT(10,3) COMMENT 'Total generation (kWh)',
+    fault_code           SMALLINT UNSIGNED DEFAULT 0 COMMENT 'Fault code',
+    fault                TINYINT(1) DEFAULT 0 COMMENT 'Fault status (0/1)',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'DB insert time',
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_inverter_id (inverter_id),
+    INDEX idx_fault (fault)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COMMENT='solar-rs485-monitor inverter log';
+
+CREATE USER 'solar_logger'@'%' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
+GRANT INSERT, SELECT ON solar_rs485_monitor.inverter_log TO 'solar_logger'@'%';
+
+FLUSH PRIVILEGES;
+```
+
+The `%` host allows remote access from any IP. For production, restrict it to the collector host IP whenever possible.
+
+## OpenSearch Configuration
+
+To use `--opensearch`, configure these values in `solar-rs485-monitor.conf`:
+
+```env
+OPENSEARCH_URL="https://YOUR_OPENSEARCH_HOST:9200"
+OPENSEARCH_INDEX="solar-rs485-monitor"
+OPENSEARCH_USERNAME=""
+OPENSEARCH_PASSWORD=""
+OPENSEARCH_TIMEOUT="5.0"
+OPENSEARCH_VERIFY_TLS="true"
+```
+
+The sink writes each collected inverter document to:
+
+```text
+POST /solar-rs485-monitor/_doc
+```
+
+Set `OPENSEARCH_USERNAME` and `OPENSEARCH_PASSWORD` together when the cluster requires basic authentication. For self-signed TLS certificates, either install the CA certificate on the host or set `OPENSEARCH_VERIFY_TLS="false"` for that environment.
+
 ## Google Sheets Configuration
 
 To use `--google-sheet`, configure these values in `solar-rs485-monitor.conf`:
@@ -362,7 +446,7 @@ For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data
 
 | Output field | Data bytes | Scale | Unit | Description |
 | --- | ---: | ---: | --- | --- |
-| `@timestamp` | N/A | N/A | ISO 8601 UTC | Collection timestamp generated by the collector |
+| `@timestamp` | N/A | N/A | ISO 8601 with timezone offset | Collection timestamp generated by the collector using `TIMEZONE` |
 | `inverter_name` | N/A | N/A | text | Name from `INVERTER_NAME` |
 | `inverter_id` | frame byte 1 | 1 | numeric ID | Inverter ID returned by the device |
 | `pv_voltage_v` | data 0-1 | 1 | V | PV input voltage |
@@ -382,7 +466,7 @@ Successful reads include fields such as:
 
 ```json
 {
-  "@timestamp": "2026-06-29T00:00:00+00:00",
+  "@timestamp": "2026-06-29T09:00:00+09:00",
   "inverter_name": "YOUR_INVERTER_NAME",
   "inverter_id": 1,
   "pv_voltage_v": 0,
@@ -404,7 +488,7 @@ Errors are also printed as JSON:
 
 ```json
 {
-  "@timestamp": "2026-06-29T00:00:00+00:00",
+  "@timestamp": "2026-06-29T09:00:00+09:00",
   "inverter_name": "YOUR_INVERTER_NAME",
   "error": "No response from inverter"
 }
@@ -415,8 +499,11 @@ Errors are also printed as JSON:
 - `No response from inverter`: check `SERIAL_PORT`, remote RS485 host IP, TCP port, RS485 wiring, inverter ID, and baud rate.
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
+- `Invalid TIMEZONE`: set `TIMEZONE` to a valid IANA timezone name such as `Asia/Seoul`.
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
 - `MARIADB_PASSWORD is not set`: set the MariaDB password in `solar-rs485-monitor.conf` before running with `--mariadb`.
 - `MariaDB logging failed`: check `MARIADB_HOST`, `MARIADB_PORT`, firewall rules, database grants, username, password, database name, and table name.
+- `OPENSEARCH_URL is not set`: set the OpenSearch endpoint before running with `--opensearch`.
+- `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.

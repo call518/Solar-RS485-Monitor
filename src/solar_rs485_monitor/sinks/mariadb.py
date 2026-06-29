@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 INSERT_COLUMNS = [
@@ -62,18 +62,18 @@ def validate_mariadb_config(config: dict) -> None:
             raise RuntimeError(f"MARIADB_{key.upper()} is not set")
 
 
-def parse_utc_datetime(value: str) -> datetime:
+def parse_timestamp_datetime(value: str) -> datetime:
     timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     if timestamp.tzinfo is None:
         return timestamp
 
-    return timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+    return timestamp.replace(tzinfo=None)
 
 
 def build_row(data: dict) -> list:
     values = {
-        "timestamp": parse_utc_datetime(data["@timestamp"]),
+        "timestamp": parse_timestamp_datetime(data["@timestamp"]),
         "inverter_name": data["inverter_name"],
         "inverter_id": data["inverter_id"],
         "pv_voltage_v": data["pv_voltage_v"],

@@ -5,9 +5,10 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,6 +24,10 @@ from solar_rs485_monitor.sinks.mariadb import (
     get_mariadb_config,
     write_to_mariadb,
 )
+from solar_rs485_monitor.sinks.opensearch import (
+    get_opensearch_config,
+    write_to_opensearch,
+)
 from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
@@ -30,6 +35,7 @@ from solar_rs485_monitor.sinks.thingspeak import (
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
+LOCAL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -58,6 +64,19 @@ def env_bool(name: str, default: str = "false") -> bool:
     return value in ("1", "true", "yes", "y", "on")
 
 
+def get_timezone() -> ZoneInfo:
+    timezone_name = os.getenv("TIMEZONE", "Asia/Seoul").strip()
+
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as e:
+        raise RuntimeError(f"Invalid TIMEZONE: {timezone_name}") from e
+
+
+def now_iso() -> str:
+    return datetime.now(LOCAL_TIMEZONE).isoformat()
+
+
 def print_json(data: dict) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
 
@@ -73,7 +92,7 @@ def print_section_json(title: str, data: dict) -> None:
 
 def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
     print_section_json(sink, {
-        "@timestamp": datetime.now(timezone.utc).isoformat(),
+        "@timestamp": now_iso(),
         "inverter_name": inverter_name,
         "sink": sink,
         "error": str(error),
@@ -199,7 +218,7 @@ def parse_frame(
     fault_code = u16(data, 24)
 
     return {
-        "@timestamp": datetime.now(timezone.utc).isoformat(),
+        "@timestamp": now_iso(),
         "inverter_name": inverter_name,
         "inverter_id": inverter_id,
         "pv_voltage_v": u16(data, 0),
@@ -328,6 +347,12 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--opensearch",
+        action="store_true",
+        help="Write collected data to OpenSearch or Elasticsearch",
+    )
+
+    parser.add_argument(
         "--all-sinks",
         action="store_true",
         help="Write collected data to all configured sinks",
@@ -338,6 +363,9 @@ def main() -> None:
     if args.print_config_template:
         print_config_template()
         return
+
+    global LOCAL_TIMEZONE
+    LOCAL_TIMEZONE = get_timezone()
 
     inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
     inverter_id = int(os.getenv("INVERTER_ID", "1"))
@@ -357,6 +385,7 @@ def main() -> None:
         args.google_sheet = True
         args.thingspeak = True
         args.mariadb = True
+        args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
 
     worksheet = None
     if args.google_sheet:
@@ -377,6 +406,17 @@ def main() -> None:
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="mariadb",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
+
+    opensearch_config = None
+    if args.opensearch:
+        try:
+            opensearch_config = get_opensearch_config()
+        except Exception as e:
+            print_sink_error(
+                inverter_name=inverter_name,
+                sink="opensearch",
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -401,8 +441,8 @@ def main() -> None:
             if worksheet is not None:
                 try:
                     write_to_google_sheet(worksheet, result)
-                    print_section_json("google_sheet", {
-                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                    print_section_json("[Sink] Google Sheet", {
+                        "@timestamp": now_iso(),
                         "inverter_name": inverter_name,
                         "sink": "google_sheet",
                         "status": "written",
@@ -422,8 +462,8 @@ def main() -> None:
                         field_map=get_thingspeak_field_map(),
                         timeout=float(os.getenv("THINGSPEAK_TIMEOUT", "5.0")),
                     )
-                    print_section_json("thingspeak", {
-                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                    print_section_json("[Sink] ThingSpeak", {
+                        "@timestamp": now_iso(),
                         "inverter_name": inverter_name,
                         "sink": "thingspeak",
                         "thingspeak_entry_id": thingspeak_entry_id,
@@ -441,8 +481,8 @@ def main() -> None:
                         data=result,
                         config=mariadb_config,
                     )
-                    print_section_json("mariadb", {
-                        "@timestamp": datetime.now(timezone.utc).isoformat(),
+                    print_section_json("[Sink] MariaDB", {
+                        "@timestamp": now_iso(),
                         "inverter_name": inverter_name,
                         "sink": "mariadb",
                         "mariadb_insert_id": mariadb_insert_id,
@@ -454,9 +494,30 @@ def main() -> None:
                         error=e,
                     )
 
+            if opensearch_config is not None:
+                try:
+                    opensearch_result = write_to_opensearch(
+                        data=result,
+                        config=opensearch_config,
+                    )
+                    print_section_json("[Sink] Opensearch", {
+                        "@timestamp": now_iso(),
+                        "inverter_name": inverter_name,
+                        "sink": "opensearch",
+                        "opensearch_index": opensearch_result["index"],
+                        "opensearch_id": opensearch_result["id"],
+                        "opensearch_result": opensearch_result["result"],
+                    })
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="opensearch",
+                        error=e,
+                    )
+
         except Exception as e:
-            print_section_json("collector", {
-                "@timestamp": datetime.now(timezone.utc).isoformat(),
+            print_section_json("[Collector] JSON Raw-Data", {
+                "@timestamp": now_iso(),
                 "inverter_name": inverter_name,
                 "error": str(e),
             })
