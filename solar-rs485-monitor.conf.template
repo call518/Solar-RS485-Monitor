@@ -48,6 +48,14 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 
 #
+# SQLite
+#
+# SQLite is the simplest local sink. The database file and table are created
+# automatically when --sqlite or --all-sinks is used.
+SQLITE_PATH="/var/lib/solar-rs485-monitor/solar-rs485-monitor.sqlite3"
+SQLITE_TABLE="inverter_log"
+
+#
 # OpenSearch / Elasticsearch
 #
 OPENSEARCH_URL="https://YOUR_OPENSEARCH_HOST:9200"

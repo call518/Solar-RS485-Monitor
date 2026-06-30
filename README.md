@@ -4,7 +4,7 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
 
 ## Collected Data at a Glance
 
@@ -28,7 +28,7 @@ When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inv
 | Status | `fault` | Boolean fault status derived from `fault_code` |
 | Debug | `raw_frame_hex` | Raw response frame for troubleshooting |
 
-The same parsed record can be printed as JSON and optionally written to Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
+The same parsed record can be printed as JSON and optionally written to SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
 
 ## Supported Inverter Scope
 
@@ -230,6 +230,12 @@ Write collected data to MariaDB:
 solar-rs485-monitor --mariadb
 ```
 
+Write collected data to SQLite:
+
+```bash
+solar-rs485-monitor --sqlite
+```
+
 Write collected data to OpenSearch or Elasticsearch:
 
 ```bash
@@ -254,6 +260,12 @@ Repeat collection and write to MariaDB:
 solar-rs485-monitor --interval 60 --mariadb
 ```
 
+Repeat collection and write to SQLite:
+
+```bash
+solar-rs485-monitor --interval 60 --sqlite
+```
+
 Repeat collection and write to OpenSearch or Elasticsearch:
 
 ```bash
@@ -263,7 +275,7 @@ solar-rs485-monitor --interval 60 --opensearch
 Multiple sinks can be enabled together:
 
 ```bash
-solar-rs485-monitor --interval 60 --google-sheet --thingspeak --mariadb --opensearch
+solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb --opensearch
 ```
 
 Or enable every configured sink with one option:
@@ -272,9 +284,9 @@ Or enable every configured sink with one option:
 solar-rs485-monitor --interval 60 --all-sinks
 ```
 
-With `--all-sinks`, OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
+With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
 
-External logging failures are isolated. If Google Sheets, ThingSpeak, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
+External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
 
 ## systemd Service
 
@@ -316,7 +328,7 @@ sudo systemctl start solar-rs485-monitor
 sudo journalctl -u solar-rs485-monitor -f
 ```
 
-If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--mariadb` or `--thingspeak --mariadb --opensearch`.
+If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--sqlite` or `--sqlite --thingspeak --mariadb --opensearch`.
 
 ## Package Build
 
@@ -434,6 +446,51 @@ ALTER TABLE inverter_log
 
 The `%` host allows remote access from any IP. For production, restrict it to the collector host IP whenever possible.
 
+## SQLite Configuration
+
+SQLite is the simplest local logging sink. It uses Python's standard library and does not require a database server, user account, password, or network access.
+
+```env
+SQLITE_PATH="solar-rs485-monitor.sqlite3"
+SQLITE_TABLE="inverter_log"
+```
+
+Run with:
+
+```bash
+solar-rs485-monitor --sqlite
+```
+
+The database file and table are created automatically. If `SQLITE_PATH` is relative, it is resolved from the current working directory where the command is run. For systemd, prefer an absolute path such as:
+
+```env
+SQLITE_PATH="/var/lib/solar-rs485-monitor/solar-rs485-monitor.sqlite3"
+```
+
+The auto-created SQLite table is:
+
+```sql
+CREATE TABLE IF NOT EXISTS inverter_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    inverter_name TEXT NOT NULL,
+    inverter_id INTEGER NOT NULL,
+    input_dc_voltage_v INTEGER,
+    input_dc_current_a REAL,
+    input_dc_power_w INTEGER,
+    output_ac_voltage_v INTEGER,
+    output_ac_current_a REAL,
+    output_ac_power_w INTEGER,
+    output_ac_power_factor_pct REAL,
+    output_ac_frequency_hz REAL,
+    total_generation_kwh REAL,
+    fault_code INTEGER DEFAULT 0,
+    fault INTEGER DEFAULT 0,
+    raw_frame_hex TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ## OpenSearch Configuration
 
 To use `--opensearch`, configure these values in `solar-rs485-monitor.conf`:
@@ -541,6 +598,7 @@ Errors are also printed as JSON:
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
 - `MARIADB_PASSWORD is not set`: set the MariaDB password in `solar-rs485-monitor.conf` before running with `--mariadb`.
 - `MariaDB logging failed`: check `MARIADB_HOST`, `MARIADB_PORT`, firewall rules, database grants, username, password, database name, and table name.
+- `SQLite unable to open database file`: check `SQLITE_PATH` and directory write permissions.
 - `OPENSEARCH_URL is not set`: set the OpenSearch endpoint before running with `--opensearch`.
 - `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.

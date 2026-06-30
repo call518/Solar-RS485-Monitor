@@ -28,6 +28,10 @@ from solar_rs485_monitor.sinks.opensearch import (
     get_opensearch_config,
     write_to_opensearch,
 )
+from solar_rs485_monitor.sinks.sqlite import (
+    get_sqlite_config,
+    write_to_sqlite,
+)
 from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
@@ -347,6 +351,12 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--sqlite",
+        action="store_true",
+        help="Write collected data to SQLite",
+    )
+
+    parser.add_argument(
         "--opensearch",
         action="store_true",
         help="Write collected data to OpenSearch or Elasticsearch",
@@ -385,6 +395,7 @@ def main() -> None:
         args.google_sheet = True
         args.thingspeak = True
         args.mariadb = True
+        args.sqlite = True
         args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
 
     worksheet = None
@@ -406,6 +417,17 @@ def main() -> None:
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="mariadb",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
+
+    sqlite_config = None
+    if args.sqlite:
+        try:
+            sqlite_config = get_sqlite_config()
+        except Exception as e:
+            print_sink_error(
+                inverter_name=inverter_name,
+                sink="sqlite",
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -491,6 +513,26 @@ def main() -> None:
                     print_sink_error(
                         inverter_name=inverter_name,
                         sink="mariadb",
+                        error=e,
+                    )
+
+            if sqlite_config is not None:
+                try:
+                    sqlite_insert_id = write_to_sqlite(
+                        data=result,
+                        config=sqlite_config,
+                    )
+                    print_section_json("[Sink] SQLite", {
+                        "@timestamp": now_iso(),
+                        "inverter_name": inverter_name,
+                        "sink": "sqlite",
+                        "sqlite_path": sqlite_config["path"],
+                        "sqlite_insert_id": sqlite_insert_id,
+                    })
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="sqlite",
                         error=e,
                     )
 
