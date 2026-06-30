@@ -77,6 +77,20 @@ def get_timezone() -> ZoneInfo:
         raise RuntimeError(f"Invalid TIMEZONE: {timezone_name}") from e
 
 
+def parse_optional_interval(value: str) -> float | None:
+    interval_text = value.strip()
+
+    if not interval_text:
+        return None
+
+    interval = float(interval_text)
+
+    if interval <= 0:
+        raise RuntimeError("COLLECT_INTERVAL must be greater than 0")
+
+    return interval
+
+
 def now_iso() -> str:
     return datetime.now(LOCAL_TIMEZONE).isoformat()
 
@@ -329,7 +343,10 @@ def main() -> None:
         "--interval",
         type=float,
         default=None,
-        help="Repeat collection interval seconds. If omitted, collect once.",
+        help=(
+            "Repeat collection interval seconds. "
+            "Overrides COLLECT_INTERVAL from the config file."
+        ),
     )
 
     parser.add_argument(
@@ -390,6 +407,14 @@ def main() -> None:
     crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
+    collect_interval = (
+        args.interval
+        if args.interval is not None
+        else parse_optional_interval(os.getenv("COLLECT_INTERVAL", ""))
+    )
+
+    if collect_interval is not None and collect_interval <= 0:
+        raise RuntimeError("--interval must be greater than 0")
 
     if args.all_sinks:
         args.google_sheet = True
@@ -564,10 +589,10 @@ def main() -> None:
                 "error": str(e),
             })
 
-        if args.interval is None:
+        if collect_interval is None:
             break
 
-        time.sleep(args.interval)
+        time.sleep(collect_interval)
 
 
 if __name__ == "__main__":

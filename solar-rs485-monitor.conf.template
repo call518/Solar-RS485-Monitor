@@ -5,6 +5,10 @@
 # Examples: Asia/Seoul, UTC, America/Los_Angeles
 TIMEZONE="Asia/Seoul"
 
+# Repeat collection interval seconds.
+# Leave empty to collect once when running without --interval.
+COLLECT_INTERVAL="60"
+
 #
 # Serial (RS485)
 #

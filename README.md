@@ -55,7 +55,7 @@ Internally, the code uses `pyserial`'s `serial_for_url()`, so both a normal devi
 
 ## Quickstart With SQLite
 
-This is the shortest path to collect one sample and inspect stored data without any external logging service.
+This is the shortest path to collect data and inspect stored rows without any external logging service.
 
 1. Install the package:
 
@@ -79,7 +79,7 @@ INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
 SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
 ```
 
-4. Collect once and write to SQLite:
+4. Start collection and write to SQLite:
 
 ```bash
 solar-rs485-monitor --sqlite
@@ -120,9 +120,12 @@ General settings:
 
 ```env
 TIMEZONE="Asia/Seoul"
+COLLECT_INTERVAL="60"
 ```
 
 `TIMEZONE` must be an IANA timezone name such as `Asia/Seoul`, `UTC`, or `America/Los_Angeles`. Generated `@timestamp` values use this timezone and include the UTC offset, for example `+09:00` for Korea.
+
+`COLLECT_INTERVAL` is the default repeat interval in seconds when `--interval` is not provided. Leave it empty to collect once by default. A command-line `--interval` value always overrides `COLLECT_INTERVAL`.
 
 ## Setup
 
@@ -233,7 +236,7 @@ INVERTER_VERIFY_CRC="true"
 
 ## Run
 
-Collect once and print JSON:
+Collect using the default interval from `COLLECT_INTERVAL`:
 
 ```bash
 solar-rs485-monitor
@@ -245,7 +248,7 @@ Override the port temporarily from the command line:
 solar-rs485-monitor --port socket://192.168.35.6:9600
 ```
 
-Repeat collection every 60 seconds:
+Override the repeat interval temporarily from the command line:
 
 ```bash
 solar-rs485-monitor --interval 60
@@ -320,7 +323,7 @@ solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb
 Or enable every configured sink with one option:
 
 ```bash
-solar-rs485-monitor --interval 60 --all-sinks
+solar-rs485-monitor --all-sinks
 ```
 
 With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
@@ -329,10 +332,10 @@ External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, Ma
 
 ## systemd Service
 
-A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It runs the collector every 60 seconds and enables all sinks:
+A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It uses `COLLECT_INTERVAL` from `solar-rs485-monitor.conf` and enables all sinks:
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --interval 60 --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --all-sinks
 ```
 
 Before installing it, edit this setting for the target host:
@@ -342,10 +345,10 @@ Before installing it, edit this setting for the target host:
 If the package is installed inside a virtualenv, systemd does not inherit your activated shell. Use the virtualenv command path directly, for example:
 
 ```ini
-ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --interval 60 --all-sinks
+ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --all-sinks
 ```
 
-The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable.
+The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` in that config file to adjust the daemon collection interval without editing the systemd unit.
 
 Example install commands:
 
