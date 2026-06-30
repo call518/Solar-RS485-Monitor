@@ -490,7 +490,12 @@ def run_app() -> None:
         metric_labels = METRIC_LABELS[lang]
 
         st.header(text["data_source"])
-        source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
+        source = "MariaDB"
+        st.caption("MariaDB")
+        # SQLite support is intentionally kept in the code path, but hidden from
+        # the default UI. Re-enable this selector if SQLite dashboard access is
+        # needed again.
+        # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
         range_name = st.selectbox(
             text["range"],
             list(RANGES.keys()),

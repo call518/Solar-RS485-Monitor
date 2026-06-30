@@ -365,6 +365,8 @@ ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
 
 - `ExecStart`: 설치된 `solar-rs485-monitor` 명령의 절대 경로를 사용합니다. `command -v solar-rs485-monitor`로 확인합니다.
 
+중요: `/path/to/solar-rs485-monitor`는 placeholder입니다. 그대로 두면 systemd가 실행 파일을 찾지 못해 `status=203/EXEC`로 실패합니다.
+
 패키지를 virtualenv 안에 설치했다면 systemd는 현재 쉘의 activate 상태를 물려받지 않습니다. 이 경우 virtualenv 안의 명령 경로를 직접 지정합니다.
 
 ```ini
@@ -422,6 +424,8 @@ solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --serv
 ```
 
 선택적으로 사용할 수 있는 systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service)에 있습니다.
+
+중요: `/path/to/solar-rs485-monitor-dashboard`는 placeholder입니다. 서비스를 시작하기 전에 반드시 각 시스템의 실제 절대 경로로 바꿔야 합니다. 그대로 두면 systemd가 실행 파일을 찾지 못해 `status=203/EXEC`로 실패합니다.
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor-dashboard.service /etc/systemd/system/

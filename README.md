@@ -365,6 +365,8 @@ Before installing it, edit this setting for the target host:
 
 - `ExecStart`: use the absolute path to the installed `solar-rs485-monitor` command. Check it with `command -v solar-rs485-monitor`.
 
+Important: `/path/to/solar-rs485-monitor` is a placeholder. If it is left unchanged, systemd will fail with `status=203/EXEC`.
+
 If the package is installed inside a virtualenv, systemd does not inherit your activated shell. Use the virtualenv command path directly, for example:
 
 ```ini
@@ -422,6 +424,8 @@ solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --serv
 ```
 
 An optional systemd unit sample is available at [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service):
+
+Important: `/path/to/solar-rs485-monitor-dashboard` is a placeholder. Replace it with the absolute path for your system before starting the service. If this is left unchanged, systemd will fail with `status=203/EXEC`.
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor-dashboard.service /etc/systemd/system/
