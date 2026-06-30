@@ -57,19 +57,25 @@ Internally, the code uses `pyserial`'s `serial_for_url()`, so both a normal devi
 
 This is the shortest path to collect data and inspect stored rows without any external logging service.
 
-1. Install the package:
+1. Create a virtual environment:
 
 ```bash
-pip install solar-rs485-monitor
+uv venv .venv
 ```
 
-2. Create the primary config file:
+2. Install the package in that environment:
 
 ```bash
-solar-rs485-monitor --print-config-template > /etc/solar-rs485-monitor.conf
+./.venv/bin/pip install solar-rs485-monitor
 ```
 
-3. Edit `/etc/solar-rs485-monitor.conf` and set at least these values for your inverter and RS485 connection:
+3. Create the config file at `/etc/solar-rs485-monitor.conf`:
+
+```bash
+./.venv/bin/solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
+```
+
+4. Edit `/etc/solar-rs485-monitor.conf` and set at least these values:
 
 ```env
 SERIAL_PORT="/dev/ttyUSB0"
@@ -77,15 +83,16 @@ INVERTER_NAME="YOUR_INVERTER_NAME"
 INVERTER_ID="1"
 INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
 SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
+PYTHON_VENV_PATH="/absolute/path/to/.venv"
 ```
 
-4. Start collection and write to SQLite:
+5. Start collection and write to SQLite:
 
 ```bash
-solar-rs485-monitor --sqlite
+./.venv/bin/solar-rs485-monitor --sqlite
 ```
 
-5. Query the latest rows:
+6. Query the latest rows:
 
 ```bash
 sqlite3 -header -column /tmp/solar-rs485-monitor.sqlite3 \
@@ -126,6 +133,7 @@ DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 COLLECT_INTERVAL="60"
+PYTHON_VENV_PATH="/opt/myapp/.venv"
 COLLECTOR_SINKS="all"
 ```
 
@@ -134,6 +142,8 @@ COLLECTOR_SINKS="all"
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 
 `COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`.
+
+`PYTHON_VENV_PATH` is used by the sample systemd units to prepend `${PYTHON_VENV_PATH}/bin` to `PATH` before launching the collector and dashboard commands.
 
 `COLLECTOR_SINKS` is used only when no sink CLI flags are provided. Use `all` or a comma-separated list such as `mariadb,thingspeak,opensearch`.
 
@@ -365,23 +375,14 @@ External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, Ma
 
 ## systemd Service
 
-A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It uses `COLLECT_INTERVAL` and `COLLECTOR_SINKS` from `solar-rs485-monitor.conf`:
+A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It reads `/etc/solar-rs485-monitor.conf` via `EnvironmentFile` and builds `PATH` using `PYTHON_VENV_PATH`:
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --loop
+EnvironmentFile=/etc/solar-rs485-monitor.conf
+ExecStart=/usr/bin/env PATH=${PYTHON_VENV_PATH}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin solar-rs485-monitor --loop
 ```
 
-Before installing it, edit this setting for the target host:
-
-- `ExecStart`: use the absolute path to the installed `solar-rs485-monitor` command. Check it with `command -v solar-rs485-monitor`.
-
-Important: `/path/to/solar-rs485-monitor` is a placeholder. If it is left unchanged, systemd will fail with `status=203/EXEC`.
-
-If the package is installed inside a virtualenv, systemd does not inherit your activated shell. Use the virtualenv command path directly, for example:
-
-```ini
-ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --loop --all-sinks
-```
+Before installing it, set `PYTHON_VENV_PATH` in `/etc/solar-rs485-monitor.conf` to your virtualenv root, for example `/opt/myapp/.venv`.
 
 The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` or `COLLECTOR_SINKS` in that config file to adjust daemon behavior without editing the systemd unit.
 
@@ -389,7 +390,6 @@ Example install commands:
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor.service /etc/systemd/system/
-sudo sed -i "s|/path/to/solar-rs485-monitor|$(command -v solar-rs485-monitor)|" /etc/systemd/system/solar-rs485-monitor.service
 solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
 sudo chmod 600 /etc/solar-rs485-monitor.conf
 sudo systemctl daemon-reload
@@ -433,13 +433,10 @@ Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SE
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-An optional systemd unit sample is available at [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service):
-
-Important: `/path/to/solar-rs485-monitor-dashboard` is a placeholder. Replace it with the absolute path for your system before starting the service. If this is left unchanged, systemd will fail with `status=203/EXEC`.
+An optional systemd unit sample is available at [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service). It also uses `EnvironmentFile=/etc/solar-rs485-monitor.conf` and `PYTHON_VENV_PATH` to resolve the command from virtualenv `PATH`.
 
 ```bash
 sudo cp packaging/systemd/solar-rs485-monitor-dashboard.service /etc/systemd/system/
-sudo sed -i "s|/path/to/solar-rs485-monitor-dashboard|$(command -v solar-rs485-monitor-dashboard)|" /etc/systemd/system/solar-rs485-monitor-dashboard.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now solar-rs485-monitor-dashboard
 ```

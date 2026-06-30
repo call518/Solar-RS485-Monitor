@@ -6,7 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/path/to/solar-rs485-monitor-dashboard
+EnvironmentFile=/etc/solar-rs485-monitor.conf
+ExecStart=/usr/bin/env PATH=${PYTHON_VENV_PATH}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin solar-rs485-monitor-dashboard
 Restart=always
 RestartSec=10
 SyslogIdentifier=solar-rs485-monitor-dashboard
