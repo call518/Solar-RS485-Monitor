@@ -53,6 +53,45 @@ Two modes are supported:
 
 Internally, the code uses `pyserial`'s `serial_for_url()`, so both a normal device path and a pyserial URL work with the same setting.
 
+## Quickstart With SQLite
+
+This is the shortest path to collect one sample and inspect stored data without any external logging service.
+
+1. Install the package:
+
+```bash
+pip install solar-rs485-monitor
+```
+
+2. Create the primary config file:
+
+```bash
+solar-rs485-monitor --print-config-template > /etc/solar-rs485-monitor.conf
+```
+
+3. Edit `/etc/solar-rs485-monitor.conf` and set at least these values for your inverter and RS485 connection:
+
+```env
+SERIAL_PORT="/dev/ttyUSB0"
+INVERTER_NAME="YOUR_INVERTER_NAME"
+INVERTER_ID="1"
+INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
+SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
+```
+
+4. Collect once and write to SQLite:
+
+```bash
+solar-rs485-monitor --sqlite
+```
+
+5. Query the latest rows:
+
+```bash
+sqlite3 -header -column /tmp/solar-rs485-monitor.sqlite3 \
+"SELECT id, timestamp, input_dc_voltage_v, input_dc_power_w, output_ac_power_w, total_generation_kwh, fault_code FROM inverter_log ORDER BY id DESC LIMIT 10;"
+```
+
 ## Configuration File
 
 Runtime configuration uses `solar-rs485-monitor.conf` format, parsed with `python-dotenv`.
