@@ -164,9 +164,9 @@ DEFAULT_METRICS = [
 
 CHART_GROUPS = [
     ["total_generation_kwh"],
+    ["input_dc_power_w", "output_ac_power_w"],
     ["input_dc_voltage_v", "output_ac_voltage_v"],
     ["input_dc_current_a", "output_ac_current_a"],
-    ["input_dc_power_w", "output_ac_power_w"],
     ["output_ac_power_factor_pct", "output_ac_frequency_hz"],
     ["fault", "fault_code"],
 ]
