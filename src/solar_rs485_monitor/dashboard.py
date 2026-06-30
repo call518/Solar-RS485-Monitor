@@ -2,9 +2,8 @@ import html
 import os
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -14,6 +13,7 @@ from solar_rs485_monitor.sinks.mariadb import (
     validate_mariadb_config,
 )
 from solar_rs485_monitor.sinks.sqlite import (
+    ensure_sqlite_table,
     get_sqlite_config,
     require_identifier as require_sqlite_identifier,
 )
@@ -229,15 +229,6 @@ def load_config() -> Path | None:
     return config_path
 
 
-def get_timezone() -> ZoneInfo:
-    timezone_name = os.getenv("TIMEZONE", "Asia/Seoul").strip()
-
-    try:
-        return ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError:
-        return ZoneInfo("Asia/Seoul")
-
-
 def get_dashboard_title() -> str:
     return (
         os.getenv("DASHBOARD_TITLE", DEFAULT_DASHBOARD_TITLE).strip()
@@ -274,9 +265,26 @@ def build_streamlit_args(cli_args: list[str]) -> list[str]:
     return streamlit_args
 
 
-def get_time_bounds(range_name: str, timezone: ZoneInfo) -> tuple[datetime, datetime]:
-    now = datetime.now(timezone)
+def get_time_bounds(range_name: str) -> tuple[datetime, datetime]:
+    now = datetime.now(timezone.utc)
     return now - RANGES[range_name], now
+
+
+def normalize_timestamp_value(value):
+    import pandas as pd
+
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return pd.NaT
+
+    if pd.isna(timestamp):
+        return pd.NaT
+
+    if timestamp.tzinfo is not None:
+        return timestamp.tz_convert(timezone.utc)
+
+    return timestamp.tz_localize(timezone.utc)
 
 
 def normalize_dataframe(df):
@@ -285,7 +293,10 @@ def normalize_dataframe(df):
     if df.empty:
         return df
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["timestamp"] = df["timestamp"].map(
+        normalize_timestamp_value
+    )
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
 
     for column in METRICS:
@@ -373,7 +384,10 @@ def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None
     )
 
     base = alt.Chart(chart_data).encode(
-        x=alt.X("timestamp:T", title=None),
+        x=alt.X(
+            "timestamp:T",
+            title=None,
+        ),
         y=alt.Y(
             "value:Q",
             title=metric_label,
@@ -396,6 +410,35 @@ def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None
     )
 
     st.altair_chart(area + line, use_container_width=True)
+
+
+def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
+    import altair as alt
+
+    color = BAR_CHART_COLORS.get(metric_name, "#16a34a")
+    chart_data = (
+        chart_df[[metric_name]]
+        .reset_index()
+        .rename(columns={metric_name: "value"})
+    )
+
+    chart = (
+        alt.Chart(chart_data)
+        .mark_bar(color=color)
+        .encode(
+            x=alt.X(
+                "timestamp:T",
+                title=None,
+            ),
+            y=alt.Y("value:Q", title=metric_label),
+            tooltip=[
+                alt.Tooltip("timestamp:T", title="timestamp"),
+                alt.Tooltip("value:Q", title=metric_name),
+            ],
+        )
+    )
+
+    st.altair_chart(chart, use_container_width=True)
 
 
 def validate_bucket_minutes(bucket_minutes: int) -> int:
@@ -437,6 +480,7 @@ def read_sqlite_data(
     )
 
     with sqlite3.connect(database_path) as connection:
+        ensure_sqlite_table(connection, table)
         df = pd.read_sql_query(
             sql,
             connection,
@@ -480,8 +524,8 @@ def read_mariadb_data(
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
 
-    since_naive = since.replace(tzinfo=None)
-    until_naive = until.replace(tzinfo=None)
+    since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
+    until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
 
     with pymysql.connect(
         host=config["host"],
@@ -493,6 +537,9 @@ def read_mariadb_data(
         autocommit=True,
         connect_timeout=config["connect_timeout"],
     ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
         df = pd.read_sql_query(
             sql,
             connection,
@@ -513,7 +560,6 @@ def run_app() -> None:
     import streamlit as st
 
     load_config()
-    timezone = get_timezone()
     dashboard_title = get_dashboard_title()
 
     st.set_page_config(
@@ -565,13 +611,23 @@ def run_app() -> None:
 
     st.title(dashboard_title)
 
-    since, until = get_time_bounds(range_name, timezone)
+    since, until = get_time_bounds(range_name)
 
     try:
         if source == "MariaDB":
-            df = read_mariadb_data(since, until, int(limit), bucket_minutes)
+            df = read_mariadb_data(
+                since,
+                until,
+                int(limit),
+                bucket_minutes,
+            )
         else:
-            df = read_sqlite_data(since, until, int(limit), bucket_minutes)
+            df = read_sqlite_data(
+                since,
+                until,
+                int(limit),
+                bucket_minutes,
+            )
     except Exception as e:
         st.error(str(e))
         return
@@ -599,7 +655,10 @@ def run_app() -> None:
     )
 
     summary_columns = st.columns(3)
-    summary_columns[0].metric(text["latest"], str(latest["timestamp"]))
+    summary_columns[0].metric(
+        text["latest"],
+        str(latest["timestamp"]),
+    )
     summary_columns[1].metric(text["ac_output_w"], latest.get("output_ac_power_w"))
     summary_columns[2].markdown(
         f"""
@@ -632,9 +691,11 @@ def run_app() -> None:
             metric_name = group[0]
             st.markdown(f"#### {metric_labels[metric_name]}")
             if metric_name in BAR_CHART_COLORS:
-                st.bar_chart(
-                    chart_df[[metric_name]],
-                    color=BAR_CHART_COLORS[metric_name],
+                render_bar_chart(
+                    st,
+                    chart_df,
+                    metric_name,
+                    metric_labels[metric_name],
                 )
             else:
                 render_area_chart(
@@ -651,9 +712,11 @@ def run_app() -> None:
             with column:
                 st.markdown(f"#### {metric_labels[metric_name]}")
                 if metric_name in BAR_CHART_COLORS:
-                    st.bar_chart(
-                        chart_df[[metric_name]],
-                        color=BAR_CHART_COLORS[metric_name],
+                    render_bar_chart(
+                        st,
+                        chart_df,
+                        metric_name,
+                        metric_labels[metric_name],
                     )
                 else:
                     render_area_chart(

@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 INSERT_COLUMNS = [
@@ -68,7 +68,7 @@ def parse_timestamp_datetime(value: str) -> datetime:
     if timestamp.tzinfo is None:
         return timestamp
 
-    return timestamp.replace(tzinfo=None)
+    return timestamp.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def build_row(data: dict) -> list:

@@ -1,10 +1,6 @@
 #
 # General
 #
-# IANA timezone name used for generated timestamps.
-# Examples: Asia/Seoul, UTC, America/Los_Angeles
-TIMEZONE="Asia/Seoul"
-
 # Repeat collection interval seconds.
 # Used only with --loop. --interval overrides this value.
 COLLECT_INTERVAL="60"
@@ -63,10 +59,6 @@ MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
 MARIADB_DATABASE="solar_rs485_monitor"
 MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
-
-#
-# SQLite
-#
 # SQLite is the simplest local sink. The database file and table are created
 # automatically when --sqlite or --all-sinks is used.
 SQLITE_PATH="/var/lib/solar-rs485-monitor/solar-rs485-monitor.sqlite3"

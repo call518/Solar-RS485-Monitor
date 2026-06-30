@@ -100,6 +100,7 @@ def ensure_sqlite_table(connection: sqlite3.Connection, table: str) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
     connection.execute(
         f'CREATE INDEX IF NOT EXISTS "idx_{table}_timestamp" '
         f'ON "{table}" (timestamp)'
