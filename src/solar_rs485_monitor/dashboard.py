@@ -245,6 +245,35 @@ def get_dashboard_title() -> str:
     )
 
 
+def env_bool_text(name: str, default: str) -> str:
+    value = os.getenv(name, default).strip().lower()
+    return "true" if value in ("1", "true", "yes", "y", "on") else "false"
+
+
+def has_streamlit_option(args: list[str], option: str) -> bool:
+    return any(arg == option or arg.startswith(f"{option}=") for arg in args)
+
+
+def build_streamlit_args(cli_args: list[str]) -> list[str]:
+    option_defaults = {
+        "--server.address": os.getenv("DASHBOARD_SERVER_ADDRESS", "0.0.0.0"),
+        "--server.port": os.getenv("DASHBOARD_SERVER_PORT", "8501"),
+        "--server.headless": env_bool_text("DASHBOARD_SERVER_HEADLESS", "true"),
+        "--browser.gatherUsageStats": env_bool_text(
+            "DASHBOARD_GATHER_USAGE_STATS",
+            "false",
+        ),
+        "--server.runOnSave": env_bool_text("DASHBOARD_RUN_ON_SAVE", "false"),
+    }
+    streamlit_args = []
+
+    for option, value in option_defaults.items():
+        if value and not has_streamlit_option(cli_args, option):
+            streamlit_args.extend([option, value])
+
+    return streamlit_args
+
+
 def get_time_bounds(range_name: str, timezone: ZoneInfo) -> tuple[datetime, datetime]:
     now = datetime.now(timezone)
     return now - RANGES[range_name], now
@@ -657,13 +686,17 @@ def main() -> None:
         print(f"solar-rs485-monitor-dashboard {get_version()}")
         return
 
+    load_config()
+    cli_args = sys.argv[1:]
+
     from streamlit.web import cli as stcli
 
     sys.argv = [
         "streamlit",
         "run",
+        *build_streamlit_args(cli_args),
+        *cli_args,
         str(Path(__file__).resolve()),
-        *sys.argv[1:],
     ]
     stcli.main()
 

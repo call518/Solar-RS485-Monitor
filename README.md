@@ -121,14 +121,24 @@ General settings:
 ```env
 TIMEZONE="Asia/Seoul"
 DASHBOARD_TITLE="Solar RS485 Monitor"
+DASHBOARD_SERVER_ADDRESS="0.0.0.0"
+DASHBOARD_SERVER_PORT="8501"
+DASHBOARD_SERVER_HEADLESS="true"
+DASHBOARD_GATHER_USAGE_STATS="false"
+DASHBOARD_RUN_ON_SAVE="false"
 COLLECT_INTERVAL="60"
+COLLECTOR_SINKS="all"
 ```
 
 `TIMEZONE` must be an IANA timezone name such as `Asia/Seoul`, `UTC`, or `America/Los_Angeles`. Generated `@timestamp` values use this timezone and include the UTC offset, for example `+09:00` for Korea.
 
 `DASHBOARD_TITLE` sets the Streamlit dashboard browser title and page heading.
 
+`DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
+
 `COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`.
+
+`COLLECTOR_SINKS` is used only when no sink CLI flags are provided. Use `all` or a comma-separated list such as `mariadb,thingspeak,opensearch`.
 
 ## Setup
 
@@ -358,10 +368,10 @@ External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, Ma
 
 ## systemd Service
 
-A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It uses `COLLECT_INTERVAL` from `solar-rs485-monitor.conf` and enables all sinks:
+A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It uses `COLLECT_INTERVAL` and `COLLECTOR_SINKS` from `solar-rs485-monitor.conf`:
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --loop
 ```
 
 Before installing it, edit this setting for the target host:
@@ -376,7 +386,7 @@ If the package is installed inside a virtualenv, systemd does not inherit your a
 ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --loop --all-sinks
 ```
 
-The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` in that config file to adjust the daemon collection interval without editing the systemd unit.
+The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` or `COLLECTOR_SINKS` in that config file to adjust daemon behavior without editing the systemd unit.
 
 Example install commands:
 
@@ -420,7 +430,7 @@ Open the displayed Streamlit URL in a browser. The sidebar lets you select the d
 
 The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1, 5, 10, or 30 minute buckets before charting to reduce database transfer and browser rendering cost.
 
-To bind the dashboard to all network interfaces and run headless:
+Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. To override them from the command line:
 
 ```bash
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false

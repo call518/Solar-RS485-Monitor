@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/path/to/solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
+ExecStart=/path/to/solar-rs485-monitor-dashboard
 Restart=always
 RestartSec=10
 SyslogIdentifier=solar-rs485-monitor-dashboard

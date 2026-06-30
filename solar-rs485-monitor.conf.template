@@ -9,8 +9,18 @@ TIMEZONE="Asia/Seoul"
 # Used only with --loop. --interval overrides this value.
 COLLECT_INTERVAL="60"
 
-# Streamlit dashboard browser title and page heading.
+# Default collector sinks used only when no sink CLI flags are provided.
+# Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
+# Multiple sinks can be comma-separated, for example: mariadb,thingspeak
+COLLECTOR_SINKS="all"
+
+# Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
+DASHBOARD_SERVER_ADDRESS="0.0.0.0"
+DASHBOARD_SERVER_PORT="8501"
+DASHBOARD_SERVER_HEADLESS="true"
+DASHBOARD_GATHER_USAGE_STATS="false"
+DASHBOARD_RUN_ON_SAVE="false"
 
 #
 # Serial (RS485)

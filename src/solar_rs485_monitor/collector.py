@@ -110,6 +110,83 @@ def get_loop_interval(loop_enabled: bool, cli_interval: float | None) -> float |
     return interval
 
 
+def parse_collector_sinks(value: str) -> set[str]:
+    sink_text = value.strip()
+
+    if not sink_text:
+        return set()
+
+    aliases = {
+        "google-sheet": "google_sheet",
+        "google_sheets": "google_sheet",
+        "googlesheet": "google_sheet",
+        "thingspeak": "thingspeak",
+        "mariadb": "mariadb",
+        "mysql": "mariadb",
+        "sqlite": "sqlite",
+        "opensearch": "opensearch",
+        "elasticsearch": "opensearch",
+    }
+    requested = {
+        item.strip().lower().replace("-", "_")
+        for item in sink_text.split(",")
+        if item.strip()
+    }
+
+    if "all" in requested:
+        return {"all"}
+
+    sinks = set()
+    invalid = []
+
+    for sink in requested:
+        canonical = aliases.get(sink)
+
+        if canonical is None:
+            invalid.append(sink)
+            continue
+
+        sinks.add(canonical)
+
+    if invalid:
+        raise RuntimeError(
+            "Invalid COLLECTOR_SINKS value(s): "
+            + ", ".join(sorted(invalid))
+        )
+
+    return sinks
+
+
+def has_cli_sink_flags(args: argparse.Namespace) -> bool:
+    return any(
+        [
+            args.google_sheet,
+            args.thingspeak,
+            args.mariadb,
+            args.sqlite,
+            args.opensearch,
+            args.all_sinks,
+        ]
+    )
+
+
+def apply_sink_selection(args: argparse.Namespace) -> None:
+    if has_cli_sink_flags(args):
+        return
+
+    sinks = parse_collector_sinks(os.getenv("COLLECTOR_SINKS", ""))
+
+    if "all" in sinks:
+        args.all_sinks = True
+        return
+
+    args.google_sheet = "google_sheet" in sinks
+    args.thingspeak = "thingspeak" in sinks
+    args.mariadb = "mariadb" in sinks
+    args.sqlite = "sqlite" in sinks
+    args.opensearch = "opensearch" in sinks
+
+
 def now_iso() -> str:
     return datetime.now(LOCAL_TIMEZONE).isoformat()
 
@@ -439,6 +516,8 @@ def main() -> None:
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
     collect_interval = get_loop_interval(args.loop, args.interval)
+
+    apply_sink_selection(args)
 
     if args.all_sinks:
         args.google_sheet = True

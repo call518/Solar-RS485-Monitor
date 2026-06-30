@@ -121,14 +121,24 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 ```env
 TIMEZONE="Asia/Seoul"
 DASHBOARD_TITLE="Solar RS485 Monitor"
+DASHBOARD_SERVER_ADDRESS="0.0.0.0"
+DASHBOARD_SERVER_PORT="8501"
+DASHBOARD_SERVER_HEADLESS="true"
+DASHBOARD_GATHER_USAGE_STATS="false"
+DASHBOARD_RUN_ON_SAVE="false"
 COLLECT_INTERVAL="60"
+COLLECTOR_SINKS="all"
 ```
 
 `TIMEZONE`은 `Asia/Seoul`, `UTC`, `America/Los_Angeles` 같은 IANA timezone 이름이어야 합니다. 생성되는 `@timestamp` 값은 이 타임존을 사용하며, 한국 기준이면 `+09:00` 같은 UTC offset이 포함됩니다.
 
 `DASHBOARD_TITLE`은 Streamlit 대시보드의 브라우저 제목과 화면 상단 제목으로 사용됩니다.
 
+`DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
+
 `COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다.
+
+`COLLECTOR_SINKS`는 명령행에 sink 옵션을 하나도 주지 않았을 때만 사용됩니다. `all` 또는 `mariadb,thingspeak,opensearch` 같은 comma-separated 목록을 사용합니다.
 
 ## 설정
 
@@ -358,10 +368,10 @@ solar-rs485-monitor --loop --all-sinks
 
 ## systemd 서비스
 
-systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service)에 있습니다. `solar-rs485-monitor.conf`의 `COLLECT_INTERVAL`을 사용하며 모든 sink를 활성화합니다.
+systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service)에 있습니다. `solar-rs485-monitor.conf`의 `COLLECT_INTERVAL`과 `COLLECTOR_SINKS`를 사용합니다.
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --loop
 ```
 
 설치 전에 대상 호스트에 맞게 아래 설정을 수정합니다.
@@ -376,7 +386,7 @@ ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
 ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --loop --all-sinks
 ```
 
-서비스는 일반 설정 파일 탐색 순서를 사용합니다. 특별한 이유가 없다면 데몬용 설정은 `/etc/solar-rs485-monitor.conf`에 둡니다. 데몬 수집 간격은 systemd unit을 수정하지 말고 이 설정 파일의 `COLLECT_INTERVAL` 값을 변경합니다.
+서비스는 일반 설정 파일 탐색 순서를 사용합니다. 특별한 이유가 없다면 데몬용 설정은 `/etc/solar-rs485-monitor.conf`에 둡니다. 데몬 수집 간격이나 sink 선택은 systemd unit을 수정하지 말고 이 설정 파일의 `COLLECT_INTERVAL`, `COLLECTOR_SINKS` 값을 변경합니다.
 
 설치 예시:
 
@@ -420,7 +430,7 @@ solar-rs485-monitor-dashboard --version
 
 대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 5분, 10분, 30분 단위로 집계됩니다.
 
-모든 네트워크 인터페이스에 바인딩하고 headless 모드로 실행하려면:
+대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 명령행에서 override하려면:
 
 ```bash
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
