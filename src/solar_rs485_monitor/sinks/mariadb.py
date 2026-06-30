@@ -86,7 +86,7 @@ def build_row(data: dict) -> list:
         "output_ac_frequency_hz": data["output_ac_frequency_hz"],
         "total_generation_kwh": data["total_generation_kwh"],
         "fault_code": data["fault_code"],
-        "fault": int(bool(data["fault"])),
+        "fault": int(data["fault"]),
     }
 
     return [values[column] for column in INSERT_COLUMNS]

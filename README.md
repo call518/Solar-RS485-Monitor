@@ -25,7 +25,7 @@ When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inv
 | AC output | `output_ac_frequency_hz` | Grid-side AC output frequency |
 | Generation | `total_generation_kwh` | Total accumulated generation |
 | Status | `fault_code` | Raw inverter fault code |
-| Status | `fault` | Boolean fault status derived from `fault_code` |
+| Status | `fault` | Numeric fault status derived from `fault_code` |
 | Debug | `raw_frame_hex` | Raw response frame for troubleshooting |
 
 The same parsed record can be printed as JSON and optionally written to SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
@@ -596,7 +596,7 @@ For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data
 | `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
 | `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
 | `fault_code` | data 24-25 | 1 | code | Raw fault code |
-| `fault` | derived from `fault_code` | N/A | boolean | `true` when `fault_code != 0` |
+| `fault` | derived from `fault_code` | N/A | 0/1 | `1` when `fault_code != 0`, otherwise `0` |
 | `raw_frame_hex` | full frame | N/A | hex bytes | Raw response frame for debugging |
 
 Successful reads include fields such as:
@@ -616,7 +616,7 @@ Successful reads include fields such as:
   "output_ac_frequency_hz": 0.0,
   "total_generation_kwh": 0.0,
   "fault_code": 0,
-  "fault": false,
+  "fault": 0,
   "raw_frame_hex": "..."
 }
 ```

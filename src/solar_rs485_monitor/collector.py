@@ -249,7 +249,7 @@ def parse_frame(
         "output_ac_frequency_hz": u16(data, 14) / 10.0,
         "total_generation_kwh": u64(data, 16) / 1000.0,
         "fault_code": fault_code,
-        "fault": fault_code != 0,
+        "fault": 1 if fault_code != 0 else 0,
         "raw_frame_hex": frame.hex(" "),
     }
 

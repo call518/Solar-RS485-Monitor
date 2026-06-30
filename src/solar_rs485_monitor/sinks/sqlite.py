@@ -71,7 +71,7 @@ def build_row(data: dict) -> list:
         "output_ac_frequency_hz": data["output_ac_frequency_hz"],
         "total_generation_kwh": data["total_generation_kwh"],
         "fault_code": data["fault_code"],
-        "fault": int(bool(data["fault"])),
+        "fault": int(data["fault"]),
         "raw_frame_hex": data["raw_frame_hex"],
     }
 
