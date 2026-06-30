@@ -6,6 +6,30 @@ The collector reads inverter data, prints the parsed result as JSON, and can opt
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
 
+## Collected Data at a Glance
+
+When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inverter, each successful read produces these core values:
+
+| Category | Metric | Meaning |
+| --- | --- | --- |
+| Metadata | `@timestamp` | Collection time using the configured `TIMEZONE` |
+| Metadata | `inverter_name` | Configured inverter name |
+| Metadata | `inverter_id` | Inverter ID returned by the device |
+| DC input | `input_dc_voltage_v` | PV-side DC input voltage |
+| DC input | `input_dc_current_a` | PV-side DC input current |
+| DC input | `input_dc_power_w` | PV-side DC input power |
+| AC output | `output_ac_voltage_v` | Grid-side AC output voltage |
+| AC output | `output_ac_current_a` | Grid-side AC output current |
+| AC output | `output_ac_power_w` | Grid-side AC output power |
+| AC output | `output_ac_power_factor_pct` | Grid-side AC output power factor |
+| AC output | `output_ac_frequency_hz` | Grid-side AC output frequency |
+| Generation | `total_generation_kwh` | Total accumulated generation |
+| Status | `fault_code` | Raw inverter fault code |
+| Status | `fault` | Boolean fault status derived from `fault_code` |
+| Debug | `raw_frame_hex` | Raw response frame for troubleshooting |
+
+The same parsed record can be printed as JSON and optionally written to Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
+
 ## Supported Inverter Scope
 
 The current code was written and tested for InoElectric IEPVS-3.5-G1/G2 inverters.
@@ -466,11 +490,11 @@ For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data
 | `input_dc_voltage_v` | data 0-1 | 1 | V | DC input voltage from the PV side |
 | `input_dc_current_a` | data 2-3 | 1 | A | DC input current from the PV side |
 | `input_dc_power_w` | data 4-5 | 1 | W | DC input power from the PV side |
-| `output_ac_voltage_v` | data 6-7 | 1 | V | AC output voltage on the grid side |
-| `output_ac_current_a` | data 8-9 | 1 | A | AC output current on the grid side |
-| `output_ac_power_w` | data 10-11 | 1 | W | Current AC output power |
-| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | AC output power factor percentage |
-| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | AC output frequency |
+| `output_ac_voltage_v` | data 6-7 | 1 | V | Grid-side AC output voltage |
+| `output_ac_current_a` | data 8-9 | 1 | A | Grid-side AC output current |
+| `output_ac_power_w` | data 10-11 | 1 | W | Grid-side AC output power |
+| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | Grid-side AC output power factor |
+| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
 | `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
 | `fault_code` | data 24-25 | 1 | code | Raw fault code |
 | `fault` | derived from `fault_code` | N/A | boolean | `true` when `fault_code != 0` |
