@@ -36,10 +36,12 @@ classifiers = [
 dependencies = [
     "google-auth>=2.0",
     "gspread>=6.0",
+    "pandas>=2.0",
     "PyMySQL>=1.1",
     "pyserial>=3.5",
     "python-dotenv>=1.0",
     "pre-commit>=4.6.0",
+    "streamlit>=1.30",
 ]
 
 [project.urls]
@@ -49,6 +51,7 @@ Issues = "https://github.com/call518/Solar-RS485-Monitor/issues"
 
 [project.scripts]
 solar-rs485-monitor = "solar_rs485_monitor.collector:main"
+solar-rs485-monitor-dashboard = "solar_rs485_monitor.dashboard:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

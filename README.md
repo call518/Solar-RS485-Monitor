@@ -247,6 +247,12 @@ INVERTER_VERIFY_CRC="true"
 
 ## Run
 
+Show the installed version:
+
+```bash
+solar-rs485-monitor --version
+```
+
 Collect once and print JSON:
 
 ```bash
@@ -388,6 +394,48 @@ sudo journalctl -u solar-rs485-monitor -f
 ```
 
 If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--sqlite` or `--sqlite --thingspeak --mariadb --opensearch`.
+
+## Dashboard
+
+The Streamlit dashboard reads the same `solar-rs485-monitor.conf` lookup order as the collector, then queries MariaDB or SQLite and displays metric charts. MariaDB is selected by default.
+
+Run locally:
+
+```bash
+solar-rs485-monitor-dashboard
+```
+
+Show the dashboard command version:
+
+```bash
+solar-rs485-monitor-dashboard --version
+```
+
+Open the displayed Streamlit URL in a browser. The sidebar lets you select the data source and time range up to 6 months.
+
+The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1, 5, 10, or 30 minute buckets before charting to reduce database transfer and browser rendering cost.
+
+To bind the dashboard to all network interfaces and run headless:
+
+```bash
+solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
+```
+
+An optional systemd unit sample is available at [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service):
+
+```bash
+sudo cp packaging/systemd/solar-rs485-monitor-dashboard.service /etc/systemd/system/
+sudo sed -i "s|/path/to/solar-rs485-monitor-dashboard|$(command -v solar-rs485-monitor-dashboard)|" /etc/systemd/system/solar-rs485-monitor-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now solar-rs485-monitor-dashboard
+```
+
+Dashboard service control commands:
+
+```bash
+sudo systemctl status solar-rs485-monitor-dashboard
+sudo journalctl -u solar-rs485-monitor-dashboard -f
+```
 
 ## Package Build
 

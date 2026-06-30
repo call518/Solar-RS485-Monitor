@@ -1,3 +1,6 @@
 """Solar RS485 monitor package."""
 
-__version__ = "0.1.0"
+from solar_rs485_monitor.version import get_version
+
+
+__version__ = get_version()

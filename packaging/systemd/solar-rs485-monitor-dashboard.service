@@ -1,0 +1,15 @@
+[Unit]
+Description=Solar RS485 Monitor Dashboard
+Documentation=https://github.com/call518/Solar-RS485-Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/path/to/solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
+Restart=always
+RestartSec=10
+SyslogIdentifier=solar-rs485-monitor-dashboard
+
+[Install]
+WantedBy=multi-user.target

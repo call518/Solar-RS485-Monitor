@@ -247,6 +247,12 @@ INVERTER_VERIFY_CRC="true"
 
 ## 실행
 
+설치된 버전을 확인합니다.
+
+```bash
+solar-rs485-monitor --version
+```
+
 한 번 수집하고 JSON을 출력합니다.
 
 ```bash
@@ -388,6 +394,48 @@ sudo journalctl -u solar-rs485-monitor -f
 ```
 
 서비스에서 일부 sink만 사용하려면 `--all-sinks` 대신 `--sqlite` 또는 `--sqlite --thingspeak --mariadb --opensearch` 같은 명시적 옵션으로 바꿉니다.
+
+## 대시보드
+
+Streamlit 대시보드는 수집기와 같은 `solar-rs485-monitor.conf` 탐색 순서를 사용한 뒤, MariaDB 또는 SQLite를 조회해서 메트릭 차트를 표시합니다. MariaDB가 기본 선택값입니다.
+
+로컬 실행:
+
+```bash
+solar-rs485-monitor-dashboard
+```
+
+대시보드 명령의 버전을 확인합니다.
+
+```bash
+solar-rs485-monitor-dashboard --version
+```
+
+브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스와 최대 6개월까지의 조회 기간을 선택할 수 있습니다.
+
+대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 5분, 10분, 30분 단위로 집계됩니다.
+
+모든 네트워크 인터페이스에 바인딩하고 headless 모드로 실행하려면:
+
+```bash
+solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
+```
+
+선택적으로 사용할 수 있는 systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service)에 있습니다.
+
+```bash
+sudo cp packaging/systemd/solar-rs485-monitor-dashboard.service /etc/systemd/system/
+sudo sed -i "s|/path/to/solar-rs485-monitor-dashboard|$(command -v solar-rs485-monitor-dashboard)|" /etc/systemd/system/solar-rs485-monitor-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now solar-rs485-monitor-dashboard
+```
+
+대시보드 서비스 제어 명령:
+
+```bash
+sudo systemctl status solar-rs485-monitor-dashboard
+sudo journalctl -u solar-rs485-monitor-dashboard -f
+```
 
 ## 패키지 빌드
 

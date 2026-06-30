@@ -36,6 +36,7 @@ from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
 )
+from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
@@ -321,6 +322,12 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description="Solar inverter RS485 collector"
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"solar-rs485-monitor {get_version()}",
     )
 
     parser.add_argument(
