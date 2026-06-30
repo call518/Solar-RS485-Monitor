@@ -4,12 +4,12 @@ from urllib.request import urlopen
 
 
 DEFAULT_FIELD_MAP = {
-    "field1": "pv_voltage_v",
-    "field2": "pv_current_a",
-    "field3": "pv_power_w",
-    "field4": "grid_voltage_v",
-    "field5": "grid_current_a",
-    "field6": "current_output_w",
+    "field1": "input_dc_voltage_v",
+    "field2": "input_dc_current_a",
+    "field3": "input_dc_power_w",
+    "field4": "output_ac_voltage_v",
+    "field5": "output_ac_current_a",
+    "field6": "output_ac_power_w",
     "field7": "total_generation_kwh",
     "field8": "fault_code",
 }
