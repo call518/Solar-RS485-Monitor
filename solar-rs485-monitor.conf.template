@@ -6,7 +6,7 @@
 TIMEZONE="Asia/Seoul"
 
 # Repeat collection interval seconds.
-# Leave empty to collect once when running without --interval.
+# Used only with --loop. --interval overrides this value.
 COLLECT_INTERVAL="60"
 
 #

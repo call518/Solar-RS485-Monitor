@@ -1,0 +1,10 @@
+[Unit]
+Description=RS485 TCP Bridge
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

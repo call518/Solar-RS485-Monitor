@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/path/to/solar-rs485-monitor --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
 Restart=always
 RestartSec=10
 SyslogIdentifier=solar-rs485-monitor

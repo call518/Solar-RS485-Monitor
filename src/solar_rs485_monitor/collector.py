@@ -91,6 +91,24 @@ def parse_optional_interval(value: str) -> float | None:
     return interval
 
 
+def get_loop_interval(loop_enabled: bool, cli_interval: float | None) -> float | None:
+    if cli_interval is not None:
+        if cli_interval <= 0:
+            raise RuntimeError("--interval must be greater than 0")
+
+        return cli_interval
+
+    if not loop_enabled:
+        return None
+
+    interval = parse_optional_interval(os.getenv("COLLECT_INTERVAL", ""))
+
+    if interval is None:
+        raise RuntimeError("COLLECT_INTERVAL is required when --loop is used")
+
+    return interval
+
+
 def now_iso() -> str:
     return datetime.now(LOCAL_TIMEZONE).isoformat()
 
@@ -345,8 +363,14 @@ def main() -> None:
         default=None,
         help=(
             "Repeat collection interval seconds. "
-            "Overrides COLLECT_INTERVAL from the config file."
+            "Implies --loop and overrides COLLECT_INTERVAL."
         ),
+    )
+
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Repeat collection using COLLECT_INTERVAL from the config file",
     )
 
     parser.add_argument(
@@ -407,14 +431,7 @@ def main() -> None:
     crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
-    collect_interval = (
-        args.interval
-        if args.interval is not None
-        else parse_optional_interval(os.getenv("COLLECT_INTERVAL", ""))
-    )
-
-    if collect_interval is not None and collect_interval <= 0:
-        raise RuntimeError("--interval must be greater than 0")
+    collect_interval = get_loop_interval(args.loop, args.interval)
 
     if args.all_sinks:
         args.google_sheet = True

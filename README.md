@@ -125,7 +125,7 @@ COLLECT_INTERVAL="60"
 
 `TIMEZONE` must be an IANA timezone name such as `Asia/Seoul`, `UTC`, or `America/Los_Angeles`. Generated `@timestamp` values use this timezone and include the UTC offset, for example `+09:00` for Korea.
 
-`COLLECT_INTERVAL` is the default repeat interval in seconds when `--interval` is not provided. Leave it empty to collect once by default. A command-line `--interval` value always overrides `COLLECT_INTERVAL`.
+`COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`.
 
 ## Setup
 
@@ -189,6 +189,17 @@ In this project setup, the remote RS485 host is the device physically connected 
 /usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
 ```
 
+An optional systemd unit sample is available at [packaging/systemd/rs485-tcp-bridge.service](packaging/systemd/rs485-tcp-bridge.service). Install it on the remote RS485 host when you want the TCP bridge to start automatically:
+
+```bash
+cp packaging/systemd/rs485-tcp-bridge.service /etc/systemd/system/rs485-tcp-bridge.service
+systemctl daemon-reload
+systemctl enable --now rs485-tcp-bridge
+systemctl status rs485-tcp-bridge
+```
+
+If many forked `socat` child processes remain after clients disconnect, stop the service, clear the stale processes, and consider adding `-T 5` or `max-children=1` to the `ExecStart` command for that host.
+
 Then set `solar-rs485-monitor.conf` in the WSL development environment:
 
 ```env
@@ -236,7 +247,7 @@ INVERTER_VERIFY_CRC="true"
 
 ## Run
 
-Collect using the default interval from `COLLECT_INTERVAL`:
+Collect once and print JSON:
 
 ```bash
 solar-rs485-monitor
@@ -246,6 +257,12 @@ Override the port temporarily from the command line:
 
 ```bash
 solar-rs485-monitor --port socket://192.168.35.6:9600
+```
+
+Repeat collection using `COLLECT_INTERVAL`:
+
+```bash
+solar-rs485-monitor --loop
 ```
 
 Override the repeat interval temporarily from the command line:
@@ -323,7 +340,7 @@ solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb
 Or enable every configured sink with one option:
 
 ```bash
-solar-rs485-monitor --all-sinks
+solar-rs485-monitor --loop --all-sinks
 ```
 
 With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
@@ -335,7 +352,7 @@ External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, Ma
 A sample systemd unit is available at [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service). It uses `COLLECT_INTERVAL` from `solar-rs485-monitor.conf` and enables all sinks:
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
 ```
 
 Before installing it, edit this setting for the target host:
@@ -345,7 +362,7 @@ Before installing it, edit this setting for the target host:
 If the package is installed inside a virtualenv, systemd does not inherit your activated shell. Use the virtualenv command path directly, for example:
 
 ```ini
-ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --all-sinks
+ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --loop --all-sinks
 ```
 
 The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` in that config file to adjust the daemon collection interval without editing the systemd unit.

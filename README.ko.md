@@ -125,7 +125,7 @@ COLLECT_INTERVAL="60"
 
 `TIMEZONE`은 `Asia/Seoul`, `UTC`, `America/Los_Angeles` 같은 IANA timezone 이름이어야 합니다. 생성되는 `@timestamp` 값은 이 타임존을 사용하며, 한국 기준이면 `+09:00` 같은 UTC offset이 포함됩니다.
 
-`COLLECT_INTERVAL`은 `--interval`이 주어지지 않았을 때 사용하는 기본 반복 수집 간격입니다. 기본적으로 한 번만 수집하려면 빈 값으로 둡니다. 명령행의 `--interval` 값은 항상 `COLLECT_INTERVAL`보다 우선합니다.
+`COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다.
 
 ## 설정
 
@@ -189,6 +189,17 @@ SERIAL_TIMEOUT="1.0"
 /usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
 ```
 
+자동 시작이 필요하면 원격 RS485 호스트에 설치할 수 있는 systemd unit 샘플을 [packaging/systemd/rs485-tcp-bridge.service](packaging/systemd/rs485-tcp-bridge.service)에 제공합니다.
+
+```bash
+cp packaging/systemd/rs485-tcp-bridge.service /etc/systemd/system/rs485-tcp-bridge.service
+systemctl daemon-reload
+systemctl enable --now rs485-tcp-bridge
+systemctl status rs485-tcp-bridge
+```
+
+클라이언트 연결이 끊어진 뒤에도 fork된 `socat` 자식 프로세스가 많이 남는다면 서비스를 중지하고 stale process를 정리한 뒤, 해당 호스트의 `ExecStart` 명령에 `-T 5` 또는 `max-children=1` 추가를 검토합니다.
+
 그 다음 WSL 개발 환경의 `solar-rs485-monitor.conf`에 다음처럼 설정합니다.
 
 ```env
@@ -236,7 +247,7 @@ INVERTER_VERIFY_CRC="true"
 
 ## 실행
 
-`COLLECT_INTERVAL` 기본 간격으로 수집합니다.
+한 번 수집하고 JSON을 출력합니다.
 
 ```bash
 solar-rs485-monitor
@@ -246,6 +257,12 @@ solar-rs485-monitor
 
 ```bash
 solar-rs485-monitor --port socket://192.168.35.6:9600
+```
+
+`COLLECT_INTERVAL` 간격으로 반복 수집합니다.
+
+```bash
+solar-rs485-monitor --loop
 ```
 
 명령행에서 반복 수집 간격을 임시로 덮어씁니다.
@@ -323,7 +340,7 @@ solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb
 설정된 모든 sink를 한 옵션으로 활성화할 수도 있습니다.
 
 ```bash
-solar-rs485-monitor --all-sinks
+solar-rs485-monitor --loop --all-sinks
 ```
 
 `--all-sinks`에서는 SQLite, Google Sheets, ThingSpeak, MariaDB가 활성화됩니다. OpenSearch는 `OPENSEARCH_URL`이 설정된 경우에만 활성화됩니다. OpenSearch 설정 누락을 오류로 확인하고 싶다면 `--opensearch`를 명시적으로 사용합니다.
@@ -335,7 +352,7 @@ solar-rs485-monitor --all-sinks
 systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor.service](packaging/systemd/solar-rs485-monitor.service)에 있습니다. `solar-rs485-monitor.conf`의 `COLLECT_INTERVAL`을 사용하며 모든 sink를 활성화합니다.
 
 ```ini
-ExecStart=/path/to/solar-rs485-monitor --all-sinks
+ExecStart=/path/to/solar-rs485-monitor --loop --all-sinks
 ```
 
 설치 전에 대상 호스트에 맞게 아래 설정을 수정합니다.
@@ -345,7 +362,7 @@ ExecStart=/path/to/solar-rs485-monitor --all-sinks
 패키지를 virtualenv 안에 설치했다면 systemd는 현재 쉘의 activate 상태를 물려받지 않습니다. 이 경우 virtualenv 안의 명령 경로를 직접 지정합니다.
 
 ```ini
-ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --all-sinks
+ExecStart=/root/Solar-RS485-Monitor/.venv/bin/solar-rs485-monitor --loop --all-sinks
 ```
 
 서비스는 일반 설정 파일 탐색 순서를 사용합니다. 특별한 이유가 없다면 데몬용 설정은 `/etc/solar-rs485-monitor.conf`에 둡니다. 데몬 수집 간격은 systemd unit을 수정하지 말고 이 설정 파일의 `COLLECT_INTERVAL` 값을 변경합니다.
