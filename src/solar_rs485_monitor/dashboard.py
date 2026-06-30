@@ -21,6 +21,7 @@ from solar_rs485_monitor.version import get_version
 
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
+DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
@@ -55,14 +56,16 @@ METRIC_LABELS = {
 
 UI_TEXT = {
     "ko": {
-        "title": "Solar RS485 Monitor",
         "language": "언어 / Language",
         "data_source": "데이터 소스",
         "source": "소스",
         "range": "조회 범위",
         "bucket_minutes": "집계 시간 단위",
         "max_points": "최대 조회 포인트 수",
-        "aggregate_caption": "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 최대 포인트 수입니다.",
+        "aggregate_caption": (
+            "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
+            "최대 포인트 수입니다."
+        ),
         "no_rows": "선택한 소스와 조회 범위에 해당하는 데이터가 없습니다.",
         "inverter": "인버터",
         "id": "ID",
@@ -76,14 +79,16 @@ UI_TEXT = {
         "latest_rows": "최신 데이터 (최대 200행)",
     },
     "en": {
-        "title": "Solar RS485 Monitor",
         "language": "Language",
         "data_source": "Data Source",
         "source": "Source",
         "range": "Range",
         "bucket_minutes": "Aggregation interval",
         "max_points": "Max chart points",
-        "aggregate_caption": "This limits the maximum number of {bucket} aggregated chart points shown.",
+        "aggregate_caption": (
+            "This limits the maximum number of {bucket} aggregated chart "
+            "points shown."
+        ),
         "no_rows": "No rows found for the selected source and range.",
         "inverter": "Inverter",
         "id": "ID",
@@ -231,6 +236,13 @@ def get_timezone() -> ZoneInfo:
         return ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError:
         return ZoneInfo("Asia/Seoul")
+
+
+def get_dashboard_title() -> str:
+    return (
+        os.getenv("DASHBOARD_TITLE", DEFAULT_DASHBOARD_TITLE).strip()
+        or DEFAULT_DASHBOARD_TITLE
+    )
 
 
 def get_time_bounds(range_name: str, timezone: ZoneInfo) -> tuple[datetime, datetime]:
@@ -473,9 +485,10 @@ def run_app() -> None:
 
     load_config()
     timezone = get_timezone()
+    dashboard_title = get_dashboard_title()
 
     st.set_page_config(
-        page_title="Solar RS485 Monitor",
+        page_title=dashboard_title,
         layout="wide",
     )
 
@@ -521,7 +534,7 @@ def run_app() -> None:
             )
         )
 
-    st.title(text["title"])
+    st.title(dashboard_title)
 
     since, until = get_time_bounds(range_name, timezone)
 

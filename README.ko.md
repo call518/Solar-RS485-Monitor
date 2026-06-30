@@ -120,10 +120,13 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 
 ```env
 TIMEZONE="Asia/Seoul"
+DASHBOARD_TITLE="Solar RS485 Monitor"
 COLLECT_INTERVAL="60"
 ```
 
 `TIMEZONE`은 `Asia/Seoul`, `UTC`, `America/Los_Angeles` 같은 IANA timezone 이름이어야 합니다. 생성되는 `@timestamp` 값은 이 타임존을 사용하며, 한국 기준이면 `+09:00` 같은 UTC offset이 포함됩니다.
+
+`DASHBOARD_TITLE`은 Streamlit 대시보드의 브라우저 제목과 화면 상단 제목으로 사용됩니다.
 
 `COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다.
 

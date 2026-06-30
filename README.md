@@ -120,10 +120,13 @@ General settings:
 
 ```env
 TIMEZONE="Asia/Seoul"
+DASHBOARD_TITLE="Solar RS485 Monitor"
 COLLECT_INTERVAL="60"
 ```
 
 `TIMEZONE` must be an IANA timezone name such as `Asia/Seoul`, `UTC`, or `America/Los_Angeles`. Generated `@timestamp` values use this timezone and include the UTC offset, for example `+09:00` for Korea.
+
+`DASHBOARD_TITLE` sets the Streamlit dashboard browser title and page heading.
 
 `COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`.
 
