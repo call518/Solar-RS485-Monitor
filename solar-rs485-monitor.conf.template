@@ -23,7 +23,7 @@ DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 # Default dashboard language at startup. Supported (case-insensitive):
 # English, Korean
-DASHBOARD_LANGUAGE="Korean"
+DASHBOARD_LANGUAGE="English"
 
 # Optional dashboard login. Generate password hashes with:
 # solar-rs485-monitor-dashboard --hash-password
