@@ -32,6 +32,7 @@ from solar_rs485_monitor.version import get_version
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
+DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD = 20.0
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -106,6 +107,7 @@ UI_TEXT = {
         "fault": "점검",
         "fault_normal": "정상",
         "fault_fault": "장애",
+        "fault_standby": "대기",
         "utc": "UTC",
         "local": "Local",
         "latest_snapshot": "최신 메트릭",
@@ -149,6 +151,7 @@ UI_TEXT = {
         "fault": "Fault",
         "fault_normal": "NORMAL",
         "fault_fault": "FAULT",
+        "fault_standby": "STANDBY",
         "utc": "UTC",
         "local": "Local",
         "latest_snapshot": "Latest Metrics",
@@ -374,6 +377,20 @@ def get_dashboard_language() -> str:
         return "ko"
 
     return DEFAULT_DASHBOARD_LANGUAGE
+
+
+def get_dashboard_standby_power_w_threshold() -> float:
+    raw = os.getenv(
+        "DASHBOARD_STANDBY_POWER_W_THRESHOLD",
+        str(DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD),
+    ).strip()
+
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD
+
+    return max(0.0, value)
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
@@ -1702,12 +1719,29 @@ def render_dashboard_body(
     inverter_id = int(latest.get("inverter_id", 0))
     fault = int(latest.get("fault", 0))
     try:
+        output_ac_power_w = float(latest.get("output_ac_power_w", 0.0))
+    except (TypeError, ValueError):
+        output_ac_power_w = 0.0
+
+    standby_threshold_w = get_dashboard_standby_power_w_threshold()
+    is_standby = output_ac_power_w <= standby_threshold_w
+
+    try:
         fault_code = int(latest.get("fault_code", 0))
     except (TypeError, ValueError):
         fault_code = 0
-    fault_label = text["fault_fault"] if fault else text["fault_normal"]
-    fault_color = "#dc2626" if fault else "#16a34a"
-    fault_bg = "#fee2e2" if fault else "#dcfce7"
+
+    if is_standby:
+        fault_label = text["fault_standby"]
+        fault_color = "#475569"
+        fault_bg = "#e2e8f0"
+        fault_badge_text = fault_label
+    else:
+        fault_label = text["fault_fault"] if fault else text["fault_normal"]
+        fault_color = "#dc2626" if fault else "#16a34a"
+        fault_bg = "#fee2e2" if fault else "#dcfce7"
+        fault_badge_text = f"{fault_label} ({fault})"
+
     fault_code_label = get_fault_code_label(fault_code)
 
     st.markdown(
@@ -1745,11 +1779,11 @@ def render_dashboard_body(
             border: 1px solid {fault_color};
             font-weight: 700;
             letter-spacing: 0.02em;
-        ">{fault_label} ({fault})</div>
+        ">{fault_badge_text}</div>
         {
             (
                 f'<div style="margin-top:0.45rem; font-size:0.95rem; color:#991b1b; font-weight:600;">{html.escape(fault_code_label or f"FAULT CODE {fault_code}")}</div>'
-                if fault
+                if fault and not is_standby
                 else ""
             )
         }

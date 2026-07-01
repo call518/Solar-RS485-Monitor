@@ -128,6 +128,7 @@ General settings:
 ```env
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_LANGUAGE="Korean"
+DASHBOARD_STANDBY_POWER_W_THRESHOLD="20"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"
 DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
@@ -146,6 +147,8 @@ COLLECTOR_SINKS="all"
 `DASHBOARD_TITLE` sets the Streamlit dashboard browser title and page heading.
 
 `DASHBOARD_LANGUAGE` sets the default dashboard UI language at startup. It is case-insensitive and accepts `English` or `Korean`. Users can still change language from the sidebar after loading.
+
+`DASHBOARD_STANDBY_POWER_W_THRESHOLD` controls when the top status badge is shown as `STANDBY`. If the latest AC output power is less than or equal to this threshold, the dashboard treats it as standby to reduce night-time fault confusion.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 
