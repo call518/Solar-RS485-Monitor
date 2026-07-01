@@ -77,6 +77,9 @@ UI_TEXT = {
         "data_source": "데이터 소스",
         "source": "소스",
         "range": "조회 범위",
+        "x_axis_mode": "시간축 스케일",
+        "x_axis_mode_fixed": "고정 스케일",
+        "x_axis_mode_auto": "자동 스케일",
         "bucket_minutes": "집계 시간 단위",
         "max_points": "최대 조회 포인트 수",
         "aggregate_caption": (
@@ -117,6 +120,9 @@ UI_TEXT = {
         "data_source": "Data Source",
         "source": "Source",
         "range": "Range",
+        "x_axis_mode": "Time axis scale",
+        "x_axis_mode_fixed": "Fixed scale",
+        "x_axis_mode_auto": "Auto scale",
         "bucket_minutes": "Aggregation interval",
         "max_points": "Max chart points",
         "aggregate_caption": (
@@ -159,7 +165,7 @@ RANGE_LABELS = {
         "Last 1 hour": "최근 1시간",
         "Last 6 hours": "최근 6시간",
         "Last 24 hours": "최근 24시간",
-        "Today": "당일",
+        "Today": "오늘",
         "Last 2 days": "최근 2일",
         "Last 3 days": "최근 3일",
         "Last 7 days": "최근 7일",
@@ -228,6 +234,9 @@ REFRESH_LABELS = {
         600: "10 minutes",
     },
 }
+
+TIME_AXIS_FORMAT = "%m-%d %H:%M"
+TOOLTIP_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 TABLE_LABELS = {
     "ko": {
@@ -1183,7 +1192,15 @@ def chart_title(metric_name: str, latest, metric_labels: dict[str, str]) -> str:
     return f"{label} ({value})"
 
 
-def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
+def render_area_chart(
+    st,
+    chart_df,
+    metric_name: str,
+    metric_label: str,
+    since: datetime,
+    until: datetime,
+    fixed_time_axis: bool,
+) -> None:
     import altair as alt
 
     color = AREA_CHART_COLORS.get(metric_name, "#3b82f6")
@@ -1193,10 +1210,15 @@ def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None
         .rename(columns={metric_name: "value"})
     )
 
+    x_kwargs = {"title": None}
+    if fixed_time_axis:
+        x_kwargs["scale"] = alt.Scale(domain=[since, until])
+
     base = alt.Chart(chart_data).encode(
         x=alt.X(
             "timestamp:T",
-            title=None,
+            **x_kwargs,
+            axis=alt.Axis(format=TIME_AXIS_FORMAT),
         ),
         y=alt.Y(
             "value:Q",
@@ -1204,7 +1226,11 @@ def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None
             scale=alt.Scale(zero=False),
         ),
         tooltip=[
-            alt.Tooltip("timestamp:T", title="timestamp"),
+            alt.Tooltip(
+                "timestamp:T",
+                title="timestamp",
+                format=TOOLTIP_TIMESTAMP_FORMAT,
+            ),
             alt.Tooltip("value:Q", title=metric_name),
         ],
     )
@@ -1222,7 +1248,15 @@ def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None
     st.altair_chart(area + line, use_container_width=True)
 
 
-def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
+def render_bar_chart(
+    st,
+    chart_df,
+    metric_name: str,
+    metric_label: str,
+    since: datetime,
+    until: datetime,
+    fixed_time_axis: bool,
+) -> None:
     import altair as alt
 
     color = BAR_CHART_COLORS.get(metric_name, "#16a34a")
@@ -1242,17 +1276,26 @@ def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
     else:
         y_encoding = alt.Y("value:Q", title=metric_label)
 
+    x_kwargs = {"title": None}
+    if fixed_time_axis:
+        x_kwargs["scale"] = alt.Scale(domain=[since, until])
+
     chart = (
         alt.Chart(chart_data)
         .mark_bar(color=color)
         .encode(
             x=alt.X(
                 "timestamp:T",
-                title=None,
+                **x_kwargs,
+                axis=alt.Axis(format=TIME_AXIS_FORMAT),
             ),
             y=y_encoding,
             tooltip=[
-                alt.Tooltip("timestamp:T", title="timestamp"),
+                alt.Tooltip(
+                    "timestamp:T",
+                    title="timestamp",
+                    format=TOOLTIP_TIMESTAMP_FORMAT,
+                ),
                 alt.Tooltip("value:Q", title=metric_name),
             ],
         )
@@ -1472,6 +1515,7 @@ def render_dashboard_body(
     lang: str,
     dashboard_title: str,
     display_timezone: ZoneInfo,
+    fixed_time_axis: bool,
 ) -> None:
     since, until = get_time_bounds(range_name, display_timezone)
 
@@ -1580,6 +1624,9 @@ def render_dashboard_body(
                     chart_df,
                     metric_name,
                     metric_labels[metric_name],
+                    since,
+                    until,
+                    fixed_time_axis,
                 )
             else:
                 render_area_chart(
@@ -1587,6 +1634,9 @@ def render_dashboard_body(
                     chart_df,
                     metric_name,
                     metric_labels[metric_name],
+                    since,
+                    until,
+                    fixed_time_axis,
                 )
             continue
 
@@ -1601,6 +1651,9 @@ def render_dashboard_body(
                         chart_df,
                         metric_name,
                         metric_labels[metric_name],
+                        since,
+                        until,
+                        fixed_time_axis,
                     )
                 else:
                     render_area_chart(
@@ -1608,6 +1661,9 @@ def render_dashboard_body(
                         chart_df,
                         metric_name,
                         metric_labels[metric_name],
+                        since,
+                        until,
+                        fixed_time_axis,
                     )
 
     st.subheader(text["fault_events"])
@@ -1674,7 +1730,7 @@ def run_app() -> None:
         range_name = st.selectbox(
             text["range"],
             list(RANGES.keys()),
-            index=2,
+            index=list(RANGES.keys()).index("Today"),
             format_func=lambda value: RANGE_LABELS[lang][value],
         )
         bucket_seconds = st.selectbox(
@@ -1701,6 +1757,13 @@ def run_app() -> None:
             index=REFRESH_SECONDS.index(10),
             format_func=lambda value: REFRESH_LABELS[lang][value],
         )
+        axis_mode = st.selectbox(
+            text["x_axis_mode"],
+            ["fixed", "auto"],
+            index=0,
+            format_func=lambda value: text[f"x_axis_mode_{value}"],
+        )
+        fixed_time_axis = axis_mode == "fixed"
         render_dashboard_logout(st, text)
 
     if hasattr(st, "fragment"):
@@ -1722,6 +1785,7 @@ def run_app() -> None:
                 lang=lang,
                 dashboard_title=dashboard_title,
                 display_timezone=display_timezone,
+                fixed_time_axis=fixed_time_axis,
             )
 
         dashboard_fragment()
@@ -1738,6 +1802,7 @@ def run_app() -> None:
         lang=lang,
         dashboard_title=dashboard_title,
         display_timezone=display_timezone,
+        fixed_time_axis=fixed_time_axis,
     )
 
 
