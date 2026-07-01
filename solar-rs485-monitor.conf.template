@@ -3,6 +3,7 @@
 #
 # Repeat collection interval seconds.
 # Used only with --loop. --interval overrides this value.
+# Values below 10 seconds are clamped to 10 seconds.
 COLLECT_INTERVAL="60"
 
 # Python virtual environment path used by systemd service PATH.

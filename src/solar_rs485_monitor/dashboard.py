@@ -4,6 +4,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -66,6 +67,7 @@ UI_TEXT = {
             "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
             "최대 포인트 수입니다."
         ),
+        "auto_refresh": "자동 새로고침",
         "no_rows": "선택한 소스와 조회 범위에 해당하는 데이터가 없습니다.",
         "inverter": "인버터",
         "id": "ID",
@@ -74,6 +76,9 @@ UI_TEXT = {
         "fault": "점검",
         "fault_normal": "정상",
         "fault_fault": "장애",
+        "utc": "UTC",
+        "local": "Local",
+        "latest_snapshot": "최신 메트릭",
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
         "latest_rows": "최신 데이터 (최대 200행)",
@@ -89,6 +94,7 @@ UI_TEXT = {
             "This limits the maximum number of {bucket} aggregated chart "
             "points shown."
         ),
+        "auto_refresh": "Auto refresh",
         "no_rows": "No rows found for the selected source and range.",
         "inverter": "Inverter",
         "id": "ID",
@@ -97,6 +103,9 @@ UI_TEXT = {
         "fault": "Fault",
         "fault_normal": "NORMAL",
         "fault_fault": "FAULT",
+        "utc": "UTC",
+        "local": "Local",
+        "latest_snapshot": "Latest Metrics",
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
         "latest_rows": "Latest Rows (max 200)",
@@ -126,24 +135,51 @@ RANGE_LABELS = {
     },
 }
 
-BUCKET_MINUTES = [1, 2, 5, 10, 15, 30]
+BUCKET_SECONDS = [10, 30, 60, 120, 300, 600, 900, 1800]
 
 BUCKET_LABELS = {
     "ko": {
-        1: "1분",
-        2: "2분",
-        5: "5분",
-        10: "10분",
-        15: "15분",
-        30: "30분",
+        10: "10초",
+        30: "30초",
+        60: "1분",
+        120: "2분",
+        300: "5분",
+        600: "10분",
+        900: "15분",
+        1800: "30분",
     },
     "en": {
-        1: "1 minute",
-        2: "2 minutes",
-        5: "5 minutes",
-        10: "10 minutes",
-        15: "15 minutes",
-        30: "30 minutes",
+        10: "10 seconds",
+        30: "30 seconds",
+        60: "1 minute",
+        120: "2 minutes",
+        300: "5 minutes",
+        600: "10 minutes",
+        900: "15 minutes",
+        1800: "30 minutes",
+    },
+}
+
+REFRESH_SECONDS = [0, 10, 30, 60, 120, 300, 600]
+
+REFRESH_LABELS = {
+    "ko": {
+        0: "끄기",
+        10: "10초",
+        30: "30초",
+        60: "1분",
+        120: "2분",
+        300: "5분",
+        600: "10분",
+    },
+    "en": {
+        0: "Off",
+        10: "10 seconds",
+        30: "30 seconds",
+        60: "1 minute",
+        120: "2 minutes",
+        300: "5 minutes",
+        600: "10 minutes",
     },
 }
 
@@ -231,6 +267,15 @@ def load_config() -> Path | None:
         load_dotenv(dotenv_path=config_path, override=True)
 
     return config_path
+
+
+def get_timezone() -> ZoneInfo:
+    timezone_name = os.getenv("TIMEZONE", "Asia/Seoul").strip()
+
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("Asia/Seoul")
 
 
 def get_dashboard_title() -> str:
@@ -377,6 +422,145 @@ def render_latest_rows_table(df, columns: list[str], lang: str) -> str:
     """
 
 
+def format_timestamp_text(timestamp, display_timezone: ZoneInfo) -> tuple[str, str]:
+    if not hasattr(timestamp, "tz_convert"):
+        timestamp = datetime.fromisoformat(str(timestamp))
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    utc_timestamp = timestamp.astimezone(timezone.utc)
+    local_timestamp = timestamp.astimezone(display_timezone)
+
+    return (
+        utc_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        local_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def render_latest_timestamp(timestamp, text: dict[str, str], display_timezone: ZoneInfo) -> str:
+    utc_text, local_text = format_timestamp_text(timestamp, display_timezone)
+
+    return f"""
+    <div style="line-height: 1.45;">
+      <div style="font-size: 0.875rem; color: #475569; margin-bottom: 0.25rem;">
+        {html.escape(text["latest"])}
+      </div>
+      <div style="font-size: 1rem; font-weight: 650;">
+        {html.escape(utc_text)} <span style="color:#64748b;">({html.escape(text["utc"])})</span>
+      </div>
+      <div style="font-size: 1rem; font-weight: 650;">
+        {html.escape(local_text)} <span style="color:#64748b;">({html.escape(text["local"])})</span>
+      </div>
+    </div>
+    """
+
+
+def format_snapshot_value(metric_name: str, value) -> str:
+    if value is None:
+        return "-"
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    if metric_name in {"fault", "fault_code", "inverter_id"}:
+        return str(int(round(numeric)))
+
+    if metric_name == "total_generation_kwh":
+        return f"{numeric:.3f}"
+
+    if metric_name in {
+        "input_dc_current_a",
+        "output_ac_current_a",
+        "output_ac_power_factor_pct",
+        "output_ac_frequency_hz",
+    }:
+        return f"{numeric:.2f}"
+
+    return f"{numeric:.1f}"
+
+
+def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> None:
+    metric_order = [
+        "total_generation_kwh",
+        "input_dc_power_w",
+        "output_ac_power_w",
+        "input_dc_voltage_v",
+        "output_ac_voltage_v",
+        "input_dc_current_a",
+        "output_ac_current_a",
+        "output_ac_power_factor_pct",
+        "output_ac_frequency_hz",
+        "fault_code",
+        "fault",
+    ]
+    items = []
+
+    for metric_name in metric_order:
+        label = metric_labels.get(metric_name, metric_name)
+        value = format_snapshot_value(metric_name, latest.get(metric_name))
+        items.append(f"""
+        <div class="latest-metric">
+          <div class="latest-metric-label">{html.escape(label)}</div>
+          <div class="latest-metric-value">{html.escape(value)}</div>
+        </div>
+        """)
+
+    st.markdown(
+        f"""
+        <div class="latest-metric-grid">
+          {''.join(items)}
+        </div>
+        <style>
+          .latest-metric-grid {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1.1rem 2rem;
+            margin-top: 0.5rem;
+            margin-bottom: 1.5rem;
+          }}
+          .latest-metric {{
+            border-top: 1px solid #e5e7eb;
+            padding-top: 0.7rem;
+            min-width: 0;
+          }}
+          .latest-metric-label {{
+            color: #475569;
+            font-size: 0.86rem;
+            line-height: 1.3;
+            margin-bottom: 0.25rem;
+          }}
+          .latest-metric-value {{
+            color: #1f2937;
+            font-size: 1.85rem;
+            line-height: 1.15;
+            font-weight: 520;
+            word-break: break-word;
+          }}
+          @media (max-width: 900px) {{
+            .latest-metric-grid {{
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }}
+          }}
+          @media (max-width: 640px) {{
+            .latest-metric-grid {{
+              grid-template-columns: 1fr;
+            }}
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def chart_title(metric_name: str, latest, metric_labels: dict[str, str]) -> str:
+    label = metric_labels.get(metric_name, metric_name)
+    value = format_snapshot_value(metric_name, latest.get(metric_name))
+    return f"{label} ({value})"
+
+
 def render_area_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
     import altair as alt
 
@@ -445,23 +629,22 @@ def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
-def validate_bucket_minutes(bucket_minutes: int) -> int:
-    if bucket_minutes not in BUCKET_MINUTES:
-        raise RuntimeError(f"Invalid aggregation interval: {bucket_minutes}")
+def validate_bucket_seconds(bucket_seconds: int) -> int:
+    if bucket_seconds not in BUCKET_SECONDS:
+        raise RuntimeError(f"Invalid aggregation interval: {bucket_seconds}")
 
-    return bucket_minutes
+    return bucket_seconds
 
 
 def read_sqlite_data(
     since: datetime,
     until: datetime,
     limit: int,
-    bucket_minutes: int,
+    bucket_seconds: int,
 ):
     import pandas as pd
 
-    bucket_minutes = validate_bucket_minutes(bucket_minutes)
-    bucket_seconds = bucket_minutes * 60
+    bucket_seconds = validate_bucket_seconds(bucket_seconds)
     config = get_sqlite_config()
     database_path = Path(config["path"]).expanduser()
     table = require_sqlite_identifier(config["table"], "table")
@@ -505,13 +688,12 @@ def read_mariadb_data(
     since: datetime,
     until: datetime,
     limit: int,
-    bucket_minutes: int,
+    bucket_seconds: int,
 ):
     import pandas as pd
     import pymysql
 
-    bucket_minutes = validate_bucket_minutes(bucket_minutes)
-    bucket_seconds = bucket_minutes * 60
+    bucket_seconds = validate_bucket_seconds(bucket_seconds)
     config = get_mariadb_config()
     validate_mariadb_config(config)
     table = require_mariadb_identifier(config["table"], "table")
@@ -560,61 +742,18 @@ def read_mariadb_data(
     return normalize_dataframe(df)
 
 
-def run_app() -> None:
-    import streamlit as st
-
-    load_config()
-    dashboard_title = get_dashboard_title()
-
-    st.set_page_config(
-        page_title=dashboard_title,
-        layout="wide",
-    )
-
-    with st.sidebar:
-        language = st.selectbox(
-            "언어 / Language",
-            ["한국어", "English"],
-            index=0,
-        )
-        lang = "ko" if language == "한국어" else "en"
-        text = UI_TEXT[lang]
-        metric_labels = METRIC_LABELS[lang]
-
-        st.header(text["data_source"])
-        source = "MariaDB"
-        st.caption("MariaDB")
-        # SQLite support is intentionally kept in the code path, but hidden from
-        # the default UI. Re-enable this selector if SQLite dashboard access is
-        # needed again.
-        # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
-        range_name = st.selectbox(
-            text["range"],
-            list(RANGES.keys()),
-            index=2,
-            format_func=lambda value: RANGE_LABELS[lang][value],
-        )
-        bucket_minutes = st.selectbox(
-            text["bucket_minutes"],
-            BUCKET_MINUTES,
-            index=0,
-            format_func=lambda value: BUCKET_LABELS[lang][value],
-        )
-        limit = st.number_input(
-            text["max_points"],
-            min_value=100,
-            max_value=300000,
-            value=50000,
-            step=1000,
-        )
-        st.caption(
-            text["aggregate_caption"].format(
-                bucket=BUCKET_LABELS[lang][bucket_minutes],
-            )
-        )
-
-    st.title(dashboard_title)
-
+def render_dashboard_body(
+    st,
+    source: str,
+    range_name: str,
+    bucket_seconds: int,
+    limit: int,
+    text: dict[str, str],
+    metric_labels: dict[str, str],
+    lang: str,
+    dashboard_title: str,
+    display_timezone: ZoneInfo,
+) -> None:
     since, until = get_time_bounds(range_name)
 
     try:
@@ -623,14 +762,14 @@ def run_app() -> None:
                 since,
                 until,
                 int(limit),
-                bucket_minutes,
+                bucket_seconds,
             )
         else:
             df = read_sqlite_data(
                 since,
                 until,
                 int(limit),
-                bucket_minutes,
+                bucket_seconds,
             )
     except Exception as e:
         st.error(str(e))
@@ -650,7 +789,13 @@ def run_app() -> None:
 
     st.markdown(
         f"""
-        <div style="font-size: 1.1rem; line-height: 1.5; margin-bottom: 0.75rem;">
+        <div style="
+            font-size: 1.75rem;
+            line-height: 1.35;
+            margin-bottom: 1rem;
+            font-weight: 650;
+            color: #1f2937;
+        ">
           <strong>{text["inverter"]}:</strong> {html.escape(str(inverter_name))}
           <span style="margin-left: 1.5rem;"><strong>{text["id"]}:</strong> {inverter_id}</span>
         </div>
@@ -658,13 +803,13 @@ def run_app() -> None:
         unsafe_allow_html=True,
     )
 
-    summary_columns = st.columns(3)
-    summary_columns[0].metric(
-        text["latest"],
-        str(latest["timestamp"]),
-    )
-    summary_columns[1].metric(text["ac_output_w"], latest.get("output_ac_power_w"))
-    summary_columns[2].markdown(
+    summary_columns = st.columns([2, 1])
+    with summary_columns[0]:
+        st.markdown(
+            render_latest_timestamp(latest["timestamp"], text, display_timezone),
+            unsafe_allow_html=True,
+        )
+    summary_columns[1].markdown(
         f"""
         <div style="font-size: 0.875rem; margin-bottom: 0.25rem;">{text["fault"]}</div>
         <div style="
@@ -682,18 +827,22 @@ def run_app() -> None:
         unsafe_allow_html=True,
     )
 
+    st.markdown('<div style="height: 1.25rem;"></div>', unsafe_allow_html=True)
+    st.subheader(text["latest_snapshot"])
+    render_latest_metric_board(st, latest, metric_labels)
+
     chart_df = df.sort_values("timestamp").set_index("timestamp")
     st.subheader(text["metric_charts"])
     st.caption(
         text["chart_caption"].format(
-            bucket=BUCKET_LABELS[lang][bucket_minutes],
+            bucket=BUCKET_LABELS[lang][bucket_seconds],
         )
     )
 
     for group in CHART_GROUPS:
         if len(group) == 1:
             metric_name = group[0]
-            st.markdown(f"#### {metric_labels[metric_name]}")
+            st.markdown(f"#### {chart_title(metric_name, latest, metric_labels)}")
             if metric_name in BAR_CHART_COLORS:
                 render_bar_chart(
                     st,
@@ -714,7 +863,7 @@ def run_app() -> None:
 
         for column, metric_name in zip(chart_columns, group):
             with column:
-                st.markdown(f"#### {metric_labels[metric_name]}")
+                st.markdown(f"#### {chart_title(metric_name, latest, metric_labels)}")
                 if metric_name in BAR_CHART_COLORS:
                     render_bar_chart(
                         st,
@@ -745,6 +894,103 @@ def run_app() -> None:
     st.markdown(
         render_latest_rows_table(df, display_columns, lang),
         unsafe_allow_html=True,
+    )
+
+
+def run_app() -> None:
+    import streamlit as st
+
+    load_config()
+    dashboard_title = get_dashboard_title()
+    display_timezone = get_timezone()
+
+    st.set_page_config(
+        page_title=dashboard_title,
+        layout="wide",
+    )
+
+    with st.sidebar:
+        language = st.selectbox(
+            "언어 / Language",
+            ["한국어", "English"],
+            index=0,
+        )
+        lang = "ko" if language == "한국어" else "en"
+        text = UI_TEXT[lang]
+        metric_labels = METRIC_LABELS[lang]
+
+        st.header(text["data_source"])
+        source = "MariaDB"
+        st.caption("MariaDB")
+        # SQLite support is intentionally kept in the code path, but hidden from
+        # the default UI. Re-enable this selector if SQLite dashboard access is
+        # needed again.
+        # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
+        range_name = st.selectbox(
+            text["range"],
+            list(RANGES.keys()),
+            index=2,
+            format_func=lambda value: RANGE_LABELS[lang][value],
+        )
+        bucket_seconds = st.selectbox(
+            text["bucket_minutes"],
+            BUCKET_SECONDS,
+            index=BUCKET_SECONDS.index(60),
+            format_func=lambda value: BUCKET_LABELS[lang][value],
+        )
+        limit = st.number_input(
+            text["max_points"],
+            min_value=100,
+            max_value=300000,
+            value=50000,
+            step=1000,
+        )
+        st.caption(
+            text["aggregate_caption"].format(
+                bucket=BUCKET_LABELS[lang][bucket_seconds],
+            )
+        )
+        refresh_seconds = st.selectbox(
+            text["auto_refresh"],
+            REFRESH_SECONDS,
+            index=REFRESH_SECONDS.index(60),
+            format_func=lambda value: REFRESH_LABELS[lang][value],
+        )
+
+    st.title(dashboard_title)
+
+    if hasattr(st, "fragment"):
+        run_every = f"{refresh_seconds}s" if refresh_seconds > 0 else None
+
+        @st.fragment(run_every=run_every)
+        def dashboard_fragment() -> None:
+            render_dashboard_body(
+                st=st,
+                source=source,
+                range_name=range_name,
+                bucket_seconds=bucket_seconds,
+                limit=int(limit),
+                text=text,
+                metric_labels=metric_labels,
+                lang=lang,
+                dashboard_title=dashboard_title,
+                display_timezone=display_timezone,
+            )
+
+        dashboard_fragment()
+        return
+
+    render_dashboard_body(
+        st=st,
+        source=source,
+        range_name=range_name,
+        bucket_seconds=bucket_seconds,
+        limit=int(limit),
+        text=text,
+        metric_labels=metric_labels,
+        lang=lang,
+        dashboard_title=dashboard_title,
+        display_timezone=display_timezone,
     )
 
 

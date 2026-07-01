@@ -39,6 +39,7 @@ from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
+MIN_COLLECT_INTERVAL_SECONDS = 10.0
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -78,7 +79,7 @@ def parse_optional_interval(value: str) -> float | None:
     if interval <= 0:
         raise RuntimeError("COLLECT_INTERVAL must be greater than 0")
 
-    return interval
+    return max(interval, MIN_COLLECT_INTERVAL_SECONDS)
 
 
 def get_loop_interval(loop_enabled: bool, cli_interval: float | None) -> float | None:
@@ -86,7 +87,7 @@ def get_loop_interval(loop_enabled: bool, cli_interval: float | None) -> float |
         if cli_interval <= 0:
             raise RuntimeError("--interval must be greater than 0")
 
-        return cli_interval
+        return max(cli_interval, MIN_COLLECT_INTERVAL_SECONDS)
 
     if not loop_enabled:
         return None
@@ -442,14 +443,18 @@ def main() -> None:
         default=None,
         help=(
             "Repeat collection interval seconds. "
-            "Implies --loop and overrides COLLECT_INTERVAL."
+            "Implies --loop and overrides COLLECT_INTERVAL. "
+            "Minimum effective interval is 10 seconds."
         ),
     )
 
     parser.add_argument(
         "--loop",
         action="store_true",
-        help="Repeat collection using COLLECT_INTERVAL from the config file",
+        help=(
+            "Repeat collection using COLLECT_INTERVAL from the config file. "
+            "Minimum effective interval is 10 seconds."
+        ),
     )
 
     parser.add_argument(

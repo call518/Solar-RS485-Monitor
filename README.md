@@ -141,7 +141,7 @@ COLLECTOR_SINKS="all"
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 
-`COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`.
+`COLLECT_INTERVAL` is used only when `--loop` is provided. A command-line `--interval` value implies loop mode and always overrides `COLLECT_INTERVAL`. Values below 10 seconds are clamped to 10 seconds to reduce accidental over-collection.
 
 `PYTHON_VENV_PATH` is used by the sample systemd units to prepend `${PYTHON_VENV_PATH}/bin` to `PATH` before launching the collector and dashboard commands.
 
@@ -425,9 +425,9 @@ solar-rs485-monitor-dashboard --version
 
 Open the displayed Streamlit URL in a browser. The sidebar lets you select the data source and time range up to 6 months.
 
-The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1, 5, 10, or 30 minute buckets before charting to reduce database transfer and browser rendering cost.
+The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 10 second, 30 second, 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, or 30 minute buckets before charting to reduce database transfer and browser rendering cost.
 
-Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. To override them from the command line:
+Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The dashboard auto-refresh interval is selected in the sidebar and refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
 
 ```bash
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false

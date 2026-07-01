@@ -141,7 +141,7 @@ COLLECTOR_SINKS="all"
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 
-`COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다.
+`COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다. 과도한 수집을 줄이기 위해 10초보다 작은 값은 10초로 보정됩니다.
 
 `PYTHON_VENV_PATH`는 샘플 systemd unit에서 collector와 dashboard 실행 전에 `PATH` 앞에 `${PYTHON_VENV_PATH}/bin`을 추가할 때 사용합니다.
 
@@ -425,9 +425,9 @@ solar-rs485-monitor-dashboard --version
 
 브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스와 최대 6개월까지의 조회 기간을 선택할 수 있습니다.
 
-대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 5분, 10분, 30분 단위로 집계됩니다.
+대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 10초, 30초, 1분, 2분, 5분, 10분, 15분, 30분 단위로 집계됩니다.
 
-대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 명령행에서 override하려면:
+대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 대시보드 자동 새로고침 간격은 사이드바에서 선택하며, 브라우저 페이지 전체를 reload하지 않고 대시보드 본문 영역을 갱신합니다. 명령행에서 Streamlit 서버 옵션을 override하려면:
 
 ```bash
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
