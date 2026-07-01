@@ -691,21 +691,21 @@ Successful reads include fields such as:
 
 ```json
 {
-  "@timestamp": "2026-06-29T00:00:00+00:00",
-  "inverter_name": "YOUR_INVERTER_NAME",
+  "@timestamp": "2026-07-01T10:16:13.844550+00:00",
+  "inverter_name": "Inoelectric IEPVS-3.5-G1",
   "inverter_id": 1,
-  "input_dc_voltage_v": 0,
+  "input_dc_voltage_v": 193,
   "input_dc_current_a": 0,
-  "input_dc_power_w": 0,
-  "output_ac_voltage_v": 0,
+  "input_dc_power_w": 54,
+  "output_ac_voltage_v": 229,
   "output_ac_current_a": 0,
-  "output_ac_power_w": 0,
-  "output_ac_power_factor_pct": 0.0,
-  "output_ac_frequency_hz": 0.0,
-  "total_generation_kwh": 0.0,
+  "output_ac_power_w": 37,
+  "output_ac_power_factor_pct": 85.0,
+  "output_ac_frequency_hz": 60.0,
+  "total_generation_kwh": 112.244,
   "fault_code": 0,
   "fault": 0,
-  "raw_frame_hex": "..."
+  "raw_frame_hex": "7e 01 02 00 1a 00 c1 00 00 00 36 00 e5 00 00 00 25 03 52 02 58 00 00 00 00 00 01 b6 74 00 00 7c 21"
 }
 ```
 
