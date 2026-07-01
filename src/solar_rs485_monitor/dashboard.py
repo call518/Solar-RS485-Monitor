@@ -145,13 +145,13 @@ BUCKET_LABELS = {
 
 TABLE_LABELS = {
     "ko": {
-        "timestamp": "시각",
+        "timestamp": "시각 (UTC)",
         "inverter_name": "인버터 이름",
         "inverter_id": "인버터 ID",
         **METRIC_LABELS["ko"],
     },
     "en": {
-        "timestamp": "Timestamp",
+        "timestamp": "Timestamp (UTC)",
         "inverter_name": "Inverter name",
         "inverter_id": "Inverter ID",
         **METRIC_LABELS["en"],
