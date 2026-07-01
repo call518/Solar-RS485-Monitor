@@ -151,6 +151,8 @@ RANGE_LABELS = {
         "Last 1 hour": "최근 1시간",
         "Last 6 hours": "최근 6시간",
         "Last 24 hours": "최근 24시간",
+        "Today": "당일",
+        "Last 2 days": "최근 2일",
         "Last 3 days": "최근 3일",
         "Last 7 days": "최근 7일",
         "Last 30 days": "최근 30일",
@@ -161,6 +163,8 @@ RANGE_LABELS = {
         "Last 1 hour": "Last 1 hour",
         "Last 6 hours": "Last 6 hours",
         "Last 24 hours": "Last 24 hours",
+        "Today": "Today",
+        "Last 2 days": "Last 2 days",
         "Last 3 days": "Last 3 days",
         "Last 7 days": "Last 7 days",
         "Last 30 days": "Last 30 days",
@@ -266,6 +270,8 @@ RANGES = {
     "Last 1 hour": timedelta(hours=1),
     "Last 6 hours": timedelta(hours=6),
     "Last 24 hours": timedelta(hours=24),
+    "Today": timedelta(days=1),
+    "Last 2 days": timedelta(days=2),
     "Last 3 days": timedelta(days=3),
     "Last 7 days": timedelta(days=7),
     "Last 30 days": timedelta(days=30),
@@ -581,9 +587,18 @@ def build_streamlit_args(cli_args: list[str]) -> list[str]:
     return streamlit_args
 
 
-def get_time_bounds(range_name: str) -> tuple[datetime, datetime]:
-    now = datetime.now(timezone.utc)
-    return now - RANGES[range_name], now
+def get_time_bounds(
+    range_name: str,
+    display_timezone: ZoneInfo,
+) -> tuple[datetime, datetime]:
+    now_utc = datetime.now(timezone.utc)
+
+    if range_name == "Today":
+        now_local = now_utc.astimezone(display_timezone)
+        start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_local.astimezone(timezone.utc), now_utc
+
+    return now_utc - RANGES[range_name], now_utc
 
 
 def normalize_timestamp_value(value):
@@ -966,6 +981,16 @@ def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
         .rename(columns={metric_name: "value"})
     )
 
+    if metric_name == "fault":
+        y_encoding = alt.Y(
+            "value:Q",
+            title=metric_label,
+            scale=alt.Scale(domain=[0, 1], nice=False),
+            axis=alt.Axis(values=[0, 1], format="d"),
+        )
+    else:
+        y_encoding = alt.Y("value:Q", title=metric_label)
+
     chart = (
         alt.Chart(chart_data)
         .mark_bar(color=color)
@@ -974,7 +999,7 @@ def render_bar_chart(st, chart_df, metric_name: str, metric_label: str) -> None:
                 "timestamp:T",
                 title=None,
             ),
-            y=alt.Y("value:Q", title=metric_label),
+            y=y_encoding,
             tooltip=[
                 alt.Tooltip("timestamp:T", title="timestamp"),
                 alt.Tooltip("value:Q", title=metric_name),
@@ -1110,7 +1135,7 @@ def render_dashboard_body(
     dashboard_title: str,
     display_timezone: ZoneInfo,
 ) -> None:
-    since, until = get_time_bounds(range_name)
+    since, until = get_time_bounds(range_name, display_timezone)
 
     try:
         if source == "MariaDB":
