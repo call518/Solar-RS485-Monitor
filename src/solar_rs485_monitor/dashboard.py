@@ -285,6 +285,26 @@ MAX_AGGREGATE_METRICS = {
     "fault",
 }
 
+FAULT_CODE_LABELS_KO = {
+    1: "P01 태양전지 과전류",
+    2: "P02 태양전지 과전압",
+    3: "P14 태양전지 절연저항 부족",
+    4: "P04 DC LINK 과전압",
+    5: "P05 DC LINK 저전압",
+    6: "G06 인버터 과전류",
+    7: "G07 계통전압 과전압",
+    8: "G08 계통전압 저전압",
+    9: "S09 인버터 내부 과열",
+    10: "G10 계통전압 과주파수",
+    11: "G11 계통전압 저주파수",
+    12: "G13 RCMU 과전류",
+    13: "G18 인버터 과전류2",
+    14: "P19 DC LINK 과전압2",
+    15: "P20 DC LINK 저전압(순시)",
+    16: "S21 릴레이 고장 여부",
+    17: "S22 RCMU 고장 여부",
+}
+
 
 def get_config_path() -> Path | None:
     system_config = Path("/etc") / CONFIG_FILENAME
@@ -323,6 +343,10 @@ def get_dashboard_title() -> str:
         os.getenv("DASHBOARD_TITLE", DEFAULT_DASHBOARD_TITLE).strip()
         or DEFAULT_DASHBOARD_TITLE
     )
+
+
+def get_fault_code_label(fault_code: int) -> str | None:
+    return FAULT_CODE_LABELS_KO.get(fault_code)
 
 
 def is_dashboard_auth_enabled() -> bool:
@@ -1164,9 +1188,14 @@ def render_dashboard_body(
     inverter_name = latest.get("inverter_name", "")
     inverter_id = int(latest.get("inverter_id", 0))
     fault = int(latest.get("fault", 0))
+    try:
+        fault_code = int(latest.get("fault_code", 0))
+    except (TypeError, ValueError):
+        fault_code = 0
     fault_label = text["fault_fault"] if fault else text["fault_normal"]
     fault_color = "#dc2626" if fault else "#16a34a"
     fault_bg = "#fee2e2" if fault else "#dcfce7"
+    fault_code_label = get_fault_code_label(fault_code)
 
     st.markdown(
         f"""
@@ -1204,6 +1233,13 @@ def render_dashboard_body(
             font-weight: 700;
             letter-spacing: 0.02em;
         ">{fault_label} ({fault})</div>
+        {
+            (
+                f'<div style="margin-top:0.45rem; font-size:0.95rem; color:#991b1b; font-weight:600;">{html.escape(fault_code_label or f"FAULT CODE {fault_code}")}</div>'
+                if fault
+                else ""
+            )
+        }
         """,
         unsafe_allow_html=True,
     )
