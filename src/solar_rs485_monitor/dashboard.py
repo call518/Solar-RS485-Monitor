@@ -33,8 +33,12 @@ DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
+DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY = "solar_rs485_monitor_dashboard_auth_expires_at"
+DASHBOARD_AUTH_SESSION_EXPIRED_KEY = "solar_rs485_monitor_dashboard_auth_expired"
 DASHBOARD_AUTH_COOKIE_NAME = "solar_rs485_monitor_dashboard_auth"
 DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS = 86400
+DASHBOARD_AUTH_PERSISTENT_USERNAME = "admin"
+DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
@@ -390,7 +394,10 @@ def get_dashboard_auth_cookie_secret() -> str:
     ).hexdigest()
 
 
-def get_dashboard_auth_cookie_max_age_seconds() -> int:
+def get_dashboard_auth_cookie_max_age_seconds(username: str | None = None) -> int:
+    if username == DASHBOARD_AUTH_PERSISTENT_USERNAME:
+        return DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS
+
     raw_value = os.getenv(
         "DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS",
         str(DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS),
@@ -401,7 +408,7 @@ def get_dashboard_auth_cookie_max_age_seconds() -> int:
     except ValueError:
         return DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS
 
-    return max(60, max_age)
+    return max(1, max_age)
 
 
 def encode_urlsafe_json(data: dict) -> str:
@@ -420,19 +427,26 @@ def sign_dashboard_auth_payload(payload: str) -> str:
     return hmac.new(secret, payload.encode("ascii"), hashlib.sha256).hexdigest()
 
 
-def build_dashboard_auth_cookie(username: str) -> str:
-    max_age = get_dashboard_auth_cookie_max_age_seconds()
+def get_dashboard_auth_expires_at(username: str) -> int:
+    return int(time.time()) + get_dashboard_auth_cookie_max_age_seconds(username)
+
+
+def build_dashboard_auth_cookie(username: str, expires_at: int) -> str:
+    max_age = get_dashboard_auth_cookie_max_age_seconds(username)
     payload = encode_urlsafe_json(
         {
             "username": username,
-            "expires_at": int(time.time()) + max_age,
+            "expires_at": expires_at,
         }
     )
     signature = sign_dashboard_auth_payload(payload)
     return f"{payload}.{signature}"
 
 
-def verify_dashboard_auth_cookie(token: str, users: dict[str, str]) -> str | None:
+def verify_dashboard_auth_cookie(
+    token: str,
+    users: dict[str, str],
+) -> tuple[str, int] | None:
     try:
         payload, signature = token.split(".", 1)
         expected_signature = sign_dashboard_auth_payload(payload)
@@ -451,7 +465,7 @@ def verify_dashboard_auth_cookie(token: str, users: dict[str, str]) -> str | Non
     if username not in users:
         return None
 
-    return username
+    return username, expires_at
 
 
 def get_dashboard_auth_cookie(st) -> str:
@@ -461,6 +475,38 @@ def get_dashboard_auth_cookie(st) -> str:
         return ""
 
     return value or ""
+
+
+def clear_dashboard_auth_session(st) -> None:
+    st.session_state.pop(DASHBOARD_AUTH_SESSION_KEY, None)
+    st.session_state.pop(DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY, None)
+
+
+def set_dashboard_auth_session(st, username: str, expires_at: int) -> None:
+    st.session_state[DASHBOARD_AUTH_SESSION_KEY] = username
+    st.session_state[DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY] = expires_at
+
+
+def get_authenticated_dashboard_user(st, users: dict[str, str]) -> str | None:
+    username = st.session_state.get(DASHBOARD_AUTH_SESSION_KEY)
+    expires_at = st.session_state.get(DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY)
+
+    if username not in users:
+        clear_dashboard_auth_session(st)
+        return None
+
+    try:
+        expires_at = int(expires_at)
+    except (TypeError, ValueError):
+        clear_dashboard_auth_session(st)
+        return None
+
+    if expires_at < int(time.time()):
+        clear_dashboard_auth_session(st)
+        st.session_state[DASHBOARD_AUTH_SESSION_EXPIRED_KEY] = True
+        return None
+
+    return username
 
 
 def render_cookie_script(st, token: str | None, max_age: int) -> None:
@@ -623,7 +669,22 @@ def render_latest_rows_table(df, columns: list[str], lang: str) -> str:
     """
 
 
-def format_timestamp_text(timestamp, display_timezone: ZoneInfo) -> tuple[str, str]:
+def format_timezone_offset(timestamp) -> str:
+    offset = timestamp.utcoffset()
+    if offset is None:
+        return "+00:00"
+
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{sign}{hours:02d}:{minutes:02d}"
+
+
+def format_timestamp_text(
+    timestamp,
+    display_timezone: ZoneInfo,
+) -> tuple[str, str, str, str]:
     if not hasattr(timestamp, "tz_convert"):
         timestamp = datetime.fromisoformat(str(timestamp))
 
@@ -636,22 +697,27 @@ def format_timestamp_text(timestamp, display_timezone: ZoneInfo) -> tuple[str, s
     return (
         utc_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         local_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        format_timezone_offset(utc_timestamp),
+        format_timezone_offset(local_timestamp),
     )
 
 
 def render_latest_timestamp(timestamp, text: dict[str, str], display_timezone: ZoneInfo) -> str:
-    utc_text, local_text = format_timestamp_text(timestamp, display_timezone)
+    utc_text, local_text, utc_offset, local_offset = format_timestamp_text(
+        timestamp,
+        display_timezone,
+    )
 
     return f"""
     <div style="line-height: 1.45;">
-      <div style="font-size: 0.875rem; color: #475569; margin-bottom: 0.25rem;">
+      <div style="font-size: 1.05rem; color: #475569; margin-bottom: 0.35rem; font-weight: 600;">
         {html.escape(text["latest"])}
       </div>
-      <div style="font-size: 1rem; font-weight: 650;">
-        {html.escape(utc_text)} <span style="color:#64748b;">({html.escape(text["utc"])})</span>
+      <div style="font-size: 1.2rem; font-weight: 650;">
+        {html.escape(local_text)} <span style="color:#64748b;">({html.escape(text["local"])}, {html.escape(local_offset)})</span>
       </div>
-      <div style="font-size: 1rem; font-weight: 650;">
-        {html.escape(local_text)} <span style="color:#64748b;">({html.escape(text["local"])})</span>
+      <div style="font-size: 1.2rem; font-weight: 650;">
+        {html.escape(utc_text)} <span style="color:#64748b;">({html.escape(text["utc"])}, {html.escape(utc_offset)})</span>
       </div>
     </div>
     """
@@ -666,16 +732,24 @@ def require_dashboard_auth(st, text: dict[str, str]) -> bool:
         st.error(text["auth_not_configured"])
         return False
 
-    if st.session_state.get(DASHBOARD_AUTH_SESSION_KEY) in users:
+    if get_authenticated_dashboard_user(st, users):
         return True
 
-    cookie_username = verify_dashboard_auth_cookie(
-        get_dashboard_auth_cookie(st),
-        users,
-    )
-    if cookie_username:
-        st.session_state[DASHBOARD_AUTH_SESSION_KEY] = cookie_username
+    if st.session_state.pop(DASHBOARD_AUTH_SESSION_EXPIRED_KEY, False):
+        render_cookie_script(st, None, 0)
+        return False
+
+    cookie_token = get_dashboard_auth_cookie(st)
+    cookie_auth = verify_dashboard_auth_cookie(cookie_token, users)
+    if cookie_auth:
+        cookie_username, cookie_expires_at = cookie_auth
+        set_dashboard_auth_session(st, cookie_username, cookie_expires_at)
         return True
+
+    clear_dashboard_auth_session(st)
+    if cookie_token:
+        render_cookie_script(st, None, 0)
+        return False
 
     st.subheader(text["login_title"])
     with st.form("dashboard_login_form", clear_on_submit=False):
@@ -687,13 +761,14 @@ def require_dashboard_auth(st, text: dict[str, str]) -> bool:
         encoded_hash = users.get(username.strip())
         if encoded_hash and verify_dashboard_password(password, encoded_hash):
             authenticated_user = username.strip()
-            st.session_state[DASHBOARD_AUTH_SESSION_KEY] = authenticated_user
-            token = build_dashboard_auth_cookie(authenticated_user)
+            expires_at = get_dashboard_auth_expires_at(authenticated_user)
+            set_dashboard_auth_session(st, authenticated_user, expires_at)
+            token = build_dashboard_auth_cookie(authenticated_user, expires_at)
             st.success(text["login_success"])
             render_cookie_script(
                 st,
                 token,
-                get_dashboard_auth_cookie_max_age_seconds(),
+                get_dashboard_auth_cookie_max_age_seconds(authenticated_user),
             )
             return False
 
@@ -712,7 +787,7 @@ def render_dashboard_logout(st, text: dict[str, str]) -> None:
 
     st.caption(authenticated_user)
     if st.button(text["logout"], use_container_width=True):
-        st.session_state.pop(DASHBOARD_AUTH_SESSION_KEY, None)
+        clear_dashboard_auth_session(st)
         st.success(text["logout_success"])
         render_cookie_script(st, None, 0)
 
@@ -1229,6 +1304,9 @@ def run_app() -> None:
 
         @st.fragment(run_every=run_every)
         def dashboard_fragment() -> None:
+            if not require_dashboard_auth(st, text):
+                return
+
             render_dashboard_body(
                 st=st,
                 source=source,

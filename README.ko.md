@@ -145,7 +145,7 @@ COLLECTOR_SINKS="all"
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 
-`DASHBOARD_AUTH_ENABLED`는 내장 대시보드 로그인을 활성화합니다. `DASHBOARD_AUTH_USERS`에는 `solar-rs485-monitor-dashboard --hash-password`로 생성한 `username:password_hash` 항목을 comma-separated 형식으로 저장합니다. `DASHBOARD_AUTH_COOKIE_SECRET`은 브라우저 로그인 쿠키 서명에 사용하며, `DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS`는 새로고침이나 재접속 후 로그인이 유지되는 시간을 제어합니다.
+`DASHBOARD_AUTH_ENABLED`는 내장 대시보드 로그인을 활성화합니다. `DASHBOARD_AUTH_USERS`에는 `solar-rs485-monitor-dashboard --hash-password`로 생성한 `username:password_hash` 항목을 comma-separated 형식으로 저장합니다. `DASHBOARD_AUTH_COOKIE_SECRET`은 브라우저 로그인 쿠키 서명에 사용하며, `DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS`는 일반 사용자 로그인이 새로고침이나 재접속 후 유지되는 시간을 제어합니다. `admin` 사용자는 장기 유지 쿠키를 발급받으며, 로그아웃하거나 쿠키가 삭제되거나 cookie secret이 변경되기 전까지 로그인 상태가 유지됩니다.
 
 `COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다. 과도한 수집을 줄이기 위해 10초보다 작은 값은 10초로 보정됩니다.
 
@@ -452,7 +452,7 @@ DASHBOARD_AUTH_COOKIE_SECRET="replace-with-a-long-random-secret"
 DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS="86400"
 ```
 
-사용자가 여러 명이면 comma로 구분합니다. 로그인 상태는 서명된 브라우저 쿠키에 저장되므로, 쿠키가 만료되기 전에는 페이지 새로고침 후에도 다시 로그인하지 않습니다. 이 기능은 애플리케이션 레벨 로그인입니다. 신뢰된 LAN 밖으로 대시보드를 노출할 때는 HTTPS, reverse proxy, 방화벽 규칙, 사설망 접근 제어를 함께 사용하세요.
+사용자가 여러 명이면 comma로 구분합니다. 로그인 상태는 서명된 브라우저 쿠키에 저장되므로, 쿠키가 만료되기 전에는 페이지 새로고침 후에도 다시 로그인하지 않습니다. `admin` 사용자는 persistent user로 취급되어 로그아웃하거나 쿠키가 삭제되거나 cookie secret이 변경되기 전까지 로그인 상태가 유지됩니다. 이 기능은 애플리케이션 레벨 로그인입니다. 신뢰된 LAN 밖으로 대시보드를 노출할 때는 HTTPS, reverse proxy, 방화벽 규칙, 사설망 접근 제어를 함께 사용하세요.
 
 선택적으로 사용할 수 있는 systemd unit 샘플은 [packaging/systemd/solar-rs485-monitor-dashboard.service](packaging/systemd/solar-rs485-monitor-dashboard.service)에 있습니다. 이 unit도 `EnvironmentFile=/etc/solar-rs485-monitor.conf`와 `PYTHON_VENV_PATH`를 사용해 virtualenv `PATH`에서 명령을 찾습니다.
 
