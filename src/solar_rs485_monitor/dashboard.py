@@ -37,7 +37,7 @@ DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY = "solar_rs485_monitor_dashboard_auth_expi
 DASHBOARD_AUTH_SESSION_EXPIRED_KEY = "solar_rs485_monitor_dashboard_auth_expired"
 DASHBOARD_AUTH_COOKIE_NAME = "solar_rs485_monitor_dashboard_auth"
 DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS = 86400
-DASHBOARD_AUTH_PERSISTENT_USERNAME = "admin"
+DEFAULT_DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS = "admin"
 DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60
 
 METRICS = {
@@ -394,8 +394,28 @@ def get_dashboard_auth_cookie_secret() -> str:
     ).hexdigest()
 
 
+def parse_dashboard_auth_cookie_persistent_users() -> set[str]:
+    raw_users = os.getenv("DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS", "").strip()
+
+    # Backward compatibility for older configuration key.
+    if not raw_users:
+        raw_users = os.getenv("DASHBOARD_AUTH_PERSISTENT_USERS", "").strip()
+
+    if not raw_users:
+        raw_users = DEFAULT_DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS
+
+    if not raw_users:
+        return set()
+
+    return {
+        username.strip()
+        for username in raw_users.split(",")
+        if username.strip()
+    }
+
+
 def get_dashboard_auth_cookie_max_age_seconds(username: str | None = None) -> int:
-    if username == DASHBOARD_AUTH_PERSISTENT_USERNAME:
+    if username and username in parse_dashboard_auth_cookie_persistent_users():
         return DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS
 
     raw_value = os.getenv(

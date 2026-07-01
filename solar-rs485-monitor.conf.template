@@ -30,6 +30,9 @@ DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
 DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS="86400"
+# Comma-separated usernames that receive long-lived login cookies.
+# Default behavior treats admin as persistent for backward compatibility.
+DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS="admin"
 
 #
 # Serial (RS485)
