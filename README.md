@@ -184,7 +184,7 @@ COLLECTOR_SINKS="all"
 
 `DASHBOARD_STANDBY_POWER_W_THRESHOLD` controls when the top status badge is shown as `STANDBY`. If the latest AC output power is less than or equal to this threshold, the dashboard treats it as standby to reduce night-time fault confusion.
 
-`DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `10`, `30`, `60`, `120`, `300`, and `600`.
+`DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `10`, `30`, `60`, `120`, `300`, and `600`. A value between `1` and `9` is clamped to `10` for safety.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 

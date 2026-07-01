@@ -405,6 +405,12 @@ def get_dashboard_auto_refresh_seconds() -> int:
     except ValueError:
         return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
 
+    if value == 0:
+        return 0
+
+    if 0 < value < 10:
+        return 10
+
     if value in REFRESH_SECONDS:
         return value
 

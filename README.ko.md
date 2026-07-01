@@ -184,7 +184,7 @@ COLLECTOR_SINKS="all"
 
 `DASHBOARD_STANDBY_POWER_W_THRESHOLD`는 상단 상태 배지를 `대기(STANDBY)`로 표시할 AC 출력 전력 임계값입니다. 최신 AC 출력 전력이 이 값 이하이면, 야간 시간대의 오해를 줄이기 위해 대시보드가 대기 상태로 표시합니다.
 
-`DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `10`, `30`, `60`, `120`, `300`, `600`입니다.
+`DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `10`, `30`, `60`, `120`, `300`, `600`이며, 안전을 위해 `1`~`9`를 설정하면 `10`으로 보정됩니다.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 
