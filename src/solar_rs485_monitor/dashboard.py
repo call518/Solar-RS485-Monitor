@@ -1,7 +1,14 @@
+import base64
 import html
+import getpass
+import hashlib
+import hmac
+import json
 import os
+import secrets
 import sqlite3
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -23,6 +30,11 @@ from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
+DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
+DASHBOARD_AUTH_HASH_ITERATIONS = 260000
+DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
+DASHBOARD_AUTH_COOKIE_NAME = "solar_rs485_monitor_dashboard_auth"
+DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS = 86400
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
@@ -68,6 +80,15 @@ UI_TEXT = {
             "최대 포인트 수입니다."
         ),
         "auto_refresh": "자동 새로고침",
+        "login_title": "대시보드 로그인",
+        "login_user": "아이디",
+        "login_password": "비밀번호",
+        "login_button": "로그인",
+        "login_failed": "아이디 또는 비밀번호가 올바르지 않습니다.",
+        "logout": "로그아웃",
+        "auth_not_configured": "대시보드 인증이 켜져 있지만 DASHBOARD_AUTH_USERS가 설정되지 않았습니다.",
+        "login_success": "로그인되었습니다. 대시보드를 여는 중입니다.",
+        "logout_success": "로그아웃되었습니다.",
         "no_rows": "선택한 소스와 조회 범위에 해당하는 데이터가 없습니다.",
         "inverter": "인버터",
         "id": "ID",
@@ -95,6 +116,15 @@ UI_TEXT = {
             "points shown."
         ),
         "auto_refresh": "Auto refresh",
+        "login_title": "Dashboard Login",
+        "login_user": "Username",
+        "login_password": "Password",
+        "login_button": "Log in",
+        "login_failed": "Invalid username or password.",
+        "logout": "Log out",
+        "auth_not_configured": "Dashboard authentication is enabled, but DASHBOARD_AUTH_USERS is not set.",
+        "login_success": "Login successful. Opening dashboard.",
+        "logout_success": "Logged out.",
         "no_rows": "No rows found for the selected source and range.",
         "inverter": "Inverter",
         "id": "ID",
@@ -285,6 +315,177 @@ def get_dashboard_title() -> str:
     )
 
 
+def is_dashboard_auth_enabled() -> bool:
+    value = os.getenv("DASHBOARD_AUTH_ENABLED", "false").strip().lower()
+    return value in ("1", "true", "yes", "y", "on")
+
+
+def hash_dashboard_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        DASHBOARD_AUTH_HASH_ITERATIONS,
+    ).hex()
+    return (
+        f"{DASHBOARD_AUTH_HASH_ALGORITHM}$"
+        f"{DASHBOARD_AUTH_HASH_ITERATIONS}$"
+        f"{salt}$"
+        f"{digest}"
+    )
+
+
+def verify_dashboard_password(password: str, encoded_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, expected_digest = encoded_hash.split("$", 3)
+        iterations = int(iterations_text)
+    except ValueError:
+        return False
+
+    if algorithm != DASHBOARD_AUTH_HASH_ALGORITHM:
+        return False
+
+    try:
+        actual_digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt),
+            iterations,
+        ).hex()
+    except ValueError:
+        return False
+
+    return hmac.compare_digest(actual_digest, expected_digest)
+
+
+def parse_dashboard_auth_users() -> dict[str, str]:
+    raw_users = os.getenv("DASHBOARD_AUTH_USERS", "").strip()
+    users = {}
+
+    if not raw_users:
+        return users
+
+    for entry in raw_users.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+
+        username, separator, encoded_hash = entry.partition(":")
+        username = username.strip()
+        encoded_hash = encoded_hash.strip()
+        if separator and username and encoded_hash:
+            users[username] = encoded_hash
+
+    return users
+
+
+def get_dashboard_auth_cookie_secret() -> str:
+    explicit_secret = os.getenv("DASHBOARD_AUTH_COOKIE_SECRET", "").strip()
+    if explicit_secret:
+        return explicit_secret
+
+    return hashlib.sha256(
+        os.getenv("DASHBOARD_AUTH_USERS", "").encode("utf-8")
+    ).hexdigest()
+
+
+def get_dashboard_auth_cookie_max_age_seconds() -> int:
+    raw_value = os.getenv(
+        "DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS",
+        str(DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS),
+    ).strip()
+
+    try:
+        max_age = int(raw_value)
+    except ValueError:
+        return DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS
+
+    return max(60, max_age)
+
+
+def encode_urlsafe_json(data: dict) -> str:
+    raw = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_urlsafe_json(value: str) -> dict:
+    padded_value = value + ("=" * (-len(value) % 4))
+    raw = base64.urlsafe_b64decode(padded_value.encode("ascii"))
+    return json.loads(raw.decode("utf-8"))
+
+
+def sign_dashboard_auth_payload(payload: str) -> str:
+    secret = get_dashboard_auth_cookie_secret().encode("utf-8")
+    return hmac.new(secret, payload.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def build_dashboard_auth_cookie(username: str) -> str:
+    max_age = get_dashboard_auth_cookie_max_age_seconds()
+    payload = encode_urlsafe_json(
+        {
+            "username": username,
+            "expires_at": int(time.time()) + max_age,
+        }
+    )
+    signature = sign_dashboard_auth_payload(payload)
+    return f"{payload}.{signature}"
+
+
+def verify_dashboard_auth_cookie(token: str, users: dict[str, str]) -> str | None:
+    try:
+        payload, signature = token.split(".", 1)
+        expected_signature = sign_dashboard_auth_payload(payload)
+        if not hmac.compare_digest(signature, expected_signature):
+            return None
+
+        data = decode_urlsafe_json(payload)
+        username = str(data["username"])
+        expires_at = int(data["expires_at"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if expires_at < int(time.time()):
+        return None
+
+    if username not in users:
+        return None
+
+    return username
+
+
+def get_dashboard_auth_cookie(st) -> str:
+    try:
+        value = st.context.cookies.get(DASHBOARD_AUTH_COOKIE_NAME)
+    except Exception:
+        return ""
+
+    return value or ""
+
+
+def render_cookie_script(st, token: str | None, max_age: int) -> None:
+    import streamlit.components.v1 as components
+
+    cookie_name = json.dumps(DASHBOARD_AUTH_COOKIE_NAME)
+    if token is None:
+        cookie_value = '""'
+        cookie_max_age = "0"
+    else:
+        cookie_value = json.dumps(token)
+        cookie_max_age = str(max_age)
+
+    components.html(
+        f"""
+        <script>
+          document.cookie = {cookie_name} + "=" + encodeURIComponent({cookie_value})
+            + "; path=/; max-age=" + {cookie_max_age} + "; samesite=lax";
+          window.parent.location.reload();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def env_bool_text(name: str, default: str) -> str:
     value = os.getenv(name, default).strip().lower()
     return "true" if value in ("1", "true", "yes", "y", "on") else "false"
@@ -454,6 +655,66 @@ def render_latest_timestamp(timestamp, text: dict[str, str], display_timezone: Z
       </div>
     </div>
     """
+
+
+def require_dashboard_auth(st, text: dict[str, str]) -> bool:
+    if not is_dashboard_auth_enabled():
+        return True
+
+    users = parse_dashboard_auth_users()
+    if not users:
+        st.error(text["auth_not_configured"])
+        return False
+
+    if st.session_state.get(DASHBOARD_AUTH_SESSION_KEY) in users:
+        return True
+
+    cookie_username = verify_dashboard_auth_cookie(
+        get_dashboard_auth_cookie(st),
+        users,
+    )
+    if cookie_username:
+        st.session_state[DASHBOARD_AUTH_SESSION_KEY] = cookie_username
+        return True
+
+    st.subheader(text["login_title"])
+    with st.form("dashboard_login_form", clear_on_submit=False):
+        username = st.text_input(text["login_user"])
+        password = st.text_input(text["login_password"], type="password")
+        submitted = st.form_submit_button(text["login_button"])
+
+    if submitted:
+        encoded_hash = users.get(username.strip())
+        if encoded_hash and verify_dashboard_password(password, encoded_hash):
+            authenticated_user = username.strip()
+            st.session_state[DASHBOARD_AUTH_SESSION_KEY] = authenticated_user
+            token = build_dashboard_auth_cookie(authenticated_user)
+            st.success(text["login_success"])
+            render_cookie_script(
+                st,
+                token,
+                get_dashboard_auth_cookie_max_age_seconds(),
+            )
+            return False
+
+        st.error(text["login_failed"])
+
+    return False
+
+
+def render_dashboard_logout(st, text: dict[str, str]) -> None:
+    if not is_dashboard_auth_enabled():
+        return
+
+    authenticated_user = st.session_state.get(DASHBOARD_AUTH_SESSION_KEY)
+    if not authenticated_user:
+        return
+
+    st.caption(authenticated_user)
+    if st.button(text["logout"], use_container_width=True):
+        st.session_state.pop(DASHBOARD_AUTH_SESSION_KEY, None)
+        st.success(text["logout_success"])
+        render_cookie_script(st, None, 0)
 
 
 def format_snapshot_value(metric_name: str, value) -> str:
@@ -909,6 +1170,11 @@ def run_app() -> None:
         layout="wide",
     )
 
+    auth_text = UI_TEXT["en"]
+    st.title(dashboard_title)
+    if not require_dashboard_auth(st, auth_text):
+        return
+
     with st.sidebar:
         language = st.selectbox(
             "언어 / Language",
@@ -953,11 +1219,10 @@ def run_app() -> None:
         refresh_seconds = st.selectbox(
             text["auto_refresh"],
             REFRESH_SECONDS,
-            index=REFRESH_SECONDS.index(60),
+            index=REFRESH_SECONDS.index(10),
             format_func=lambda value: REFRESH_LABELS[lang][value],
         )
-
-    st.title(dashboard_title)
+        render_dashboard_logout(st, text)
 
     if hasattr(st, "fragment"):
         run_every = f"{refresh_seconds}s" if refresh_seconds > 0 else None
@@ -997,6 +1262,16 @@ def run_app() -> None:
 def main() -> None:
     if "--version" in sys.argv[1:]:
         print(f"solar-rs485-monitor-dashboard {get_version()}")
+        return
+
+    if "--hash-password" in sys.argv[1:]:
+        password = getpass.getpass("Password: ")
+        password_confirm = getpass.getpass("Confirm password: ")
+        if password != password_confirm:
+            raise SystemExit("Passwords do not match")
+        if not password:
+            raise SystemExit("Password must not be empty")
+        print(hash_dashboard_password(password))
         return
 
     load_config()

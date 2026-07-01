@@ -41,7 +41,7 @@ dependencies = [
     "pyserial>=3.5",
     "python-dotenv>=1.0",
     "pre-commit>=4.6.0",
-    "streamlit>=1.30",
+    "streamlit>=1.37",
 ]
 
 [project.urls]
