@@ -33,6 +33,7 @@ CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
 DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD = 20.0
+DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -391,6 +392,23 @@ def get_dashboard_standby_power_w_threshold() -> float:
         return DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD
 
     return max(0.0, value)
+
+
+def get_dashboard_auto_refresh_seconds() -> int:
+    raw = os.getenv(
+        "DASHBOARD_AUTO_REFRESH_SECONDS",
+        str(DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS),
+    ).strip()
+
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
+
+    if value in REFRESH_SECONDS:
+        return value
+
+    return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
@@ -1955,10 +1973,11 @@ def run_app() -> None:
                 bucket=BUCKET_LABELS[lang][bucket_seconds],
             )
         )
+        default_refresh_seconds = get_dashboard_auto_refresh_seconds()
         refresh_seconds = st.selectbox(
             text["auto_refresh"],
             REFRESH_SECONDS,
-            index=REFRESH_SECONDS.index(10),
+            index=REFRESH_SECONDS.index(default_refresh_seconds),
             format_func=lambda value: REFRESH_LABELS[lang][value],
         )
         axis_mode = st.selectbox(

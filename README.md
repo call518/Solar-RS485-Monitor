@@ -167,6 +167,7 @@ DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
+DASHBOARD_AUTO_REFRESH_SECONDS="60"
 DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
@@ -182,6 +183,8 @@ COLLECTOR_SINKS="all"
 `DASHBOARD_LANGUAGE` sets the default dashboard UI language at startup. It is case-insensitive and accepts `English` or `Korean`. Users can still change language from the sidebar after loading.
 
 `DASHBOARD_STANDBY_POWER_W_THRESHOLD` controls when the top status badge is shown as `STANDBY`. If the latest AC output power is less than or equal to this threshold, the dashboard treats it as standby to reduce night-time fault confusion.
+
+`DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `10`, `30`, `60`, `120`, `300`, and `600`.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 
@@ -473,7 +476,7 @@ Open the displayed Streamlit URL in a browser. The sidebar lets you select the d
 
 The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 10 second, 30 second, 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, or 30 minute buckets before charting to reduce database transfer and browser rendering cost.
 
-Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The dashboard auto-refresh interval is selected in the sidebar and refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
+Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The default sidebar auto-refresh option can be set with `DASHBOARD_AUTO_REFRESH_SECONDS`, and users can still change it from the sidebar while running. The selected interval refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
 
 ```bash
 solar-rs485-monitor-dashboard --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false
