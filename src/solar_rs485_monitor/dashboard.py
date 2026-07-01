@@ -4,6 +4,7 @@ import getpass
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -1192,6 +1193,41 @@ def chart_title(metric_name: str, latest, metric_labels: dict[str, str]) -> str:
     return f"{label} ({value})"
 
 
+def build_nonzero_metric_domain(values) -> list[float] | None:
+    numeric_values = []
+
+    for value in values:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+
+        if math.isnan(numeric) or numeric == 0:
+            continue
+
+        numeric_values.append(numeric)
+
+    if not numeric_values:
+        return None
+
+    min_value = min(numeric_values)
+    max_value = max(numeric_values)
+
+    if min_value == max_value:
+        lower = math.floor(min_value) - 1
+        upper = math.ceil(max_value) + 1
+        return [float(lower), float(upper)]
+
+    padding = (max_value - min_value) * 0.03
+    lower = math.floor(min_value - padding)
+    upper = math.ceil(max_value + padding)
+
+    if lower == upper:
+        upper += 1
+
+    return [float(lower), float(upper)]
+
+
 def render_area_chart(
     st,
     chart_df,
@@ -1248,6 +1284,90 @@ def render_area_chart(
     st.altair_chart(area + line, use_container_width=True)
 
 
+def render_total_generation_echart(
+    st,
+    chart_data,
+    metric_label: str,
+    since: datetime,
+    until: datetime,
+    fixed_time_axis: bool,
+) -> None:
+    from streamlit_echarts import st_echarts
+
+    if chart_data.empty:
+        return
+
+    echart_data = chart_data.dropna(subset=["timestamp", "value"]).copy()
+    if echart_data.empty:
+        return
+
+    points = []
+    for _, row in echart_data.iterrows():
+        timestamp = row["timestamp"]
+        value = row["value"]
+        points.append([timestamp.isoformat(), float(value)])
+
+    domain = build_nonzero_metric_domain(echart_data["value"])
+    y_min = None
+    y_max = None
+    if domain is not None:
+        y_min, y_max = domain
+
+    x_axis = {
+        "type": "time",
+        "axisLabel": {"formatter": "{MM}-{dd} {HH}:{mm}"},
+    }
+
+    if fixed_time_axis:
+        x_axis["min"] = since.isoformat()
+        x_axis["max"] = until.isoformat()
+
+    latest_timestamp = echart_data["timestamp"].max().isoformat()
+    latest_value = float(echart_data["value"].iloc[-1])
+    chart_key = (
+        "echart_total_generation_"
+        f"{latest_timestamp}_"
+        f"{latest_value:.6f}_"
+        f"{len(echart_data)}"
+    )
+
+    options = {
+        # Auto refresh re-runs the script; disable animation to reduce visual flicker.
+        "animation": False,
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "xAxis": x_axis,
+        "yAxis": {
+            "type": "value",
+            "name": metric_label,
+            "scale": True,
+            "min": y_min,
+            "max": y_max,
+            "minInterval": 1,
+            "axisLabel": {"formatter": "{value}"},
+        },
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {"type": "line"},
+        },
+        "series": [
+            {
+                "name": metric_label,
+                "type": "bar",
+                "barMaxWidth": 18,
+                "itemStyle": {"color": BAR_CHART_COLORS["total_generation_kwh"]},
+                "data": points,
+            }
+        ],
+    }
+
+    st_echarts(
+        options=options,
+        height="320px",
+        renderer="svg",
+        key=chart_key,
+    )
+
+
 def render_bar_chart(
     st,
     chart_df,
@@ -1266,6 +1386,17 @@ def render_bar_chart(
         .rename(columns={metric_name: "value"})
     )
 
+    if metric_name == "total_generation_kwh":
+        render_total_generation_echart(
+            st=st,
+            chart_data=chart_data,
+            metric_label=metric_label,
+            since=since,
+            until=until,
+            fixed_time_axis=fixed_time_axis,
+        )
+        return
+
     if metric_name == "fault":
         y_encoding = alt.Y(
             "value:Q",
@@ -1273,6 +1404,17 @@ def render_bar_chart(
             scale=alt.Scale(domain=[0, 1], nice=False),
             axis=alt.Axis(values=[0, 1], format="d"),
         )
+    elif metric_name == "total_generation_kwh":
+        domain = build_nonzero_metric_domain(chart_data["value"])
+        if domain is None:
+            y_encoding = alt.Y("value:Q", title=metric_label)
+        else:
+            y_encoding = alt.Y(
+                "value:Q",
+                title=metric_label,
+                scale=alt.Scale(domain=domain, zero=False, nice=False),
+                axis=alt.Axis(format=".0f"),
+            )
     else:
         y_encoding = alt.Y("value:Q", title=metric_label)
 
