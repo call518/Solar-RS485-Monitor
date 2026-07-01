@@ -105,6 +105,7 @@ UI_TEXT = {
         "id": "ID",
         "latest": "최신 시각",
         "ac_output_w": "AC 출력 (W)",
+        "status": "상태",
         "fault": "점검",
         "fault_normal": "정상",
         "fault_fault": "장애",
@@ -149,6 +150,7 @@ UI_TEXT = {
         "id": "ID",
         "latest": "Latest",
         "ac_output_w": "AC Output (W)",
+        "status": "Status",
         "fault": "Fault",
         "fault_normal": "NORMAL",
         "fault_fault": "FAULT",
@@ -1792,7 +1794,7 @@ def render_dashboard_body(
         )
     summary_columns[1].markdown(
         f"""
-        <div style="font-size: 0.875rem; margin-bottom: 0.25rem;">{text["fault"]}</div>
+        <div style="font-size: 0.875rem; margin-bottom: 0.25rem;">{text["status"]}</div>
         <div style="
             display: inline-flex;
             align-items: center;
