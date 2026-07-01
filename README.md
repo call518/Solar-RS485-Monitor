@@ -6,6 +6,39 @@ The collector reads inverter data, prints the parsed result as JSON, and can opt
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
 
+## Sink Screenshots
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="images/ScreenShot-001-Streamlit.png">
+        <img src="images/ScreenShot-001-Streamlit.png" alt="Streamlit dashboard" width="320" height="180" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Streamlit
+    </td>
+    <td align="center">
+      <a href="images/ScreenShot-002-ThingSpeak.png">
+        <img src="images/ScreenShot-002-ThingSpeak.png" alt="ThingSpeak" width="320" height="180" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />ThingSpeak
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="images/ScreenShot-003-Google-Sheets.png">
+        <img src="images/ScreenShot-003-Google-Sheets.png" alt="Google Sheets" width="320" height="180" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Google Sheets
+    </td>
+    <td align="center">
+      <a href="images/ScreenShot-004-OpenSearch.png">
+        <img src="images/ScreenShot-004-OpenSearch.png" alt="OpenSearch" width="320" height="180" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />OpenSearch
+    </td>
+  </tr>
+</table>
+
 ## Collected Data at a Glance
 
 When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inverter, each successful read produces these core values:
