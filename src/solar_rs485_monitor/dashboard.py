@@ -31,6 +31,7 @@ from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
+DEFAULT_DASHBOARD_LANGUAGE = "ko"
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -74,7 +75,7 @@ METRIC_LABELS = {
 
 UI_TEXT = {
     "ko": {
-        "language": "언어 / Language",
+        "language": "언어",
         "data_source": "데이터 소스",
         "source": "소스",
         "range": "조회 범위",
@@ -361,6 +362,18 @@ def get_dashboard_title() -> str:
         os.getenv("DASHBOARD_TITLE", DEFAULT_DASHBOARD_TITLE).strip()
         or DEFAULT_DASHBOARD_TITLE
     )
+
+
+def get_dashboard_language() -> str:
+    language = os.getenv("DASHBOARD_LANGUAGE", "").strip().lower()
+
+    if language in {"english", "en"}:
+        return "en"
+
+    if language in {"korean", "ko"}:
+        return "ko"
+
+    return DEFAULT_DASHBOARD_LANGUAGE
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
@@ -1853,12 +1866,27 @@ def run_app() -> None:
         return
 
     with st.sidebar:
-        language = st.selectbox(
-            "언어 / Language",
-            ["한국어", "English"],
-            index=0,
+        if "dashboard_lang" not in st.session_state:
+            st.session_state["dashboard_lang"] = get_dashboard_language()
+
+        current_lang = st.session_state["dashboard_lang"]
+        if current_lang not in {"ko", "en"}:
+            current_lang = get_dashboard_language()
+            st.session_state["dashboard_lang"] = current_lang
+
+        language_choice = st.selectbox(
+            UI_TEXT[current_lang]["language"],
+            ["ko", "en"],
+            index=0 if current_lang == "ko" else 1,
+            format_func=lambda value: "한국어" if value == "ko" else "English",
+            key="dashboard_lang_selector",
         )
-        lang = "ko" if language == "한국어" else "en"
+
+        if language_choice != current_lang:
+            st.session_state["dashboard_lang"] = language_choice
+            st.rerun()
+
+        lang = st.session_state["dashboard_lang"]
         text = UI_TEXT[lang]
         metric_labels = METRIC_LABELS[lang]
 

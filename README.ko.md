@@ -127,6 +127,7 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 
 ```env
 DASHBOARD_TITLE="Solar RS485 Monitor"
+DASHBOARD_LANGUAGE="Korean"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"
 DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
@@ -143,6 +144,8 @@ COLLECTOR_SINKS="all"
 ```
 
 `DASHBOARD_TITLE`은 Streamlit 대시보드의 브라우저 제목과 화면 상단 제목으로 사용됩니다.
+
+`DASHBOARD_LANGUAGE`는 대시보드 시작 시 기본 UI 언어를 지정합니다. 대소문자를 구분하지 않으며 `English` 또는 `Korean` 값을 지원합니다. 로딩 이후에는 사이드바에서 사용자가 언어를 변경할 수 있습니다.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 

@@ -21,6 +21,9 @@ DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
+# Default dashboard language at startup. Supported (case-insensitive):
+# English, Korean
+DASHBOARD_LANGUAGE="Korean"
 
 # Optional dashboard login. Generate password hashes with:
 # solar-rs485-monitor-dashboard --hash-password
