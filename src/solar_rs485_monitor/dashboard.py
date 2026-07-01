@@ -126,19 +126,23 @@ RANGE_LABELS = {
     },
 }
 
-BUCKET_MINUTES = [1, 5, 10, 30]
+BUCKET_MINUTES = [1, 2, 5, 10, 15, 30]
 
 BUCKET_LABELS = {
     "ko": {
         1: "1분",
+        2: "2분",
         5: "5분",
         10: "10분",
+        15: "15분",
         30: "30분",
     },
     "en": {
         1: "1 minute",
+        2: "2 minutes",
         5: "5 minutes",
         10: "10 minutes",
+        15: "15 minutes",
         30: "30 minutes",
     },
 }
