@@ -106,7 +106,11 @@ UI_TEXT = {
         "latest_snapshot": "최신 메트릭",
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
-        "latest_rows": "최신 데이터 (최대 200행)",
+        "fault_events": "장애 이벤트 (최근 200건)",
+        "fault_events_caption": "선택한 범위에서 fault_code != 0 인 최신 이벤트입니다.",
+        "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
+        "fault_code_label": "점검 코드 설명",
+        "latest_rows": "최신 데이터 (최근 200건)",
     },
     "en": {
         "language": "Language",
@@ -142,7 +146,11 @@ UI_TEXT = {
         "latest_snapshot": "Latest Metrics",
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
-        "latest_rows": "Latest Rows (max 200)",
+        "fault_events": "Fault Events (Recent 200)",
+        "fault_events_caption": "Latest events where fault_code != 0 within the selected range.",
+        "fault_events_empty": "No fault events in the selected range.",
+        "fault_code_label": "Fault code detail",
+        "latest_rows": "Latest Rows (Recent 200)",
     },
 }
 
@@ -671,6 +679,225 @@ def build_aggregate_selects(quote: str) -> str:
     return ", ".join(selects)
 
 
+def merge_mode_fault_code(df, mode_df):
+    if df.empty or mode_df.empty:
+        return df
+
+    merged = df.merge(
+        mode_df,
+        on="timestamp",
+        how="left",
+        suffixes=("", "_mode"),
+    )
+
+    if "fault_code_mode" in merged.columns:
+        merged["fault_code_mode"] = (
+            merged["fault_code_mode"]
+            .astype(float)
+            .round()
+        )
+        merged["fault_code"] = merged["fault_code_mode"].combine_first(
+            merged.get("fault_code")
+        )
+        merged = merged.drop(columns=["fault_code_mode"])
+
+    if "fault_code" in merged.columns:
+        merged["fault_code"] = merged["fault_code"].fillna(0).round().astype(int)
+        merged["fault"] = (merged["fault_code"] != 0).astype(int)
+
+    return merged
+
+
+def read_sqlite_fault_code_mode_data(
+    database_path: Path,
+    table: str,
+    since: datetime,
+    until: datetime,
+    limit: int,
+    bucket_seconds: int,
+):
+    import pandas as pd
+
+    sql = (
+        "SELECT bucket_index, timestamp, fault_code, cnt, last_seen FROM ("
+        "  SELECT "
+        "    (CAST(strftime('%s', timestamp) AS INTEGER) / ?) AS bucket_index, "
+        "    datetime((CAST(strftime('%s', timestamp) AS INTEGER) / ?) * ?, 'unixepoch') AS timestamp, "
+        "    CAST(\"fault_code\" AS INTEGER) AS fault_code, "
+        "    COUNT(*) AS cnt, "
+        "    MAX(timestamp) AS last_seen "
+        f"  FROM \"{table}\" "
+        "  WHERE timestamp >= ? AND timestamp <= ? "
+        "  GROUP BY bucket_index, fault_code"
+        ") grouped "
+        "ORDER BY timestamp DESC LIMIT ?"
+    )
+
+    query_limit = max(1, limit) * 32
+
+    with sqlite3.connect(database_path) as connection:
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[
+                bucket_seconds,
+                bucket_seconds,
+                bucket_seconds,
+                since.isoformat(),
+                until.isoformat(),
+                query_limit,
+            ],
+        )
+
+    if df.empty:
+        return normalize_dataframe(df)
+
+    grouped_df = df.sort_values(
+        ["bucket_index", "cnt", "last_seen", "fault_code"],
+        ascending=[True, False, False, False],
+    )
+    mode_df = grouped_df.drop_duplicates(subset=["bucket_index"], keep="first")
+    mode_df = mode_df[["timestamp", "fault_code"]].rename(
+        columns={"fault_code": "fault_code_mode"}
+    )
+    mode_df = mode_df.sort_values("timestamp", ascending=False).head(limit)
+    return normalize_dataframe(mode_df)
+
+
+def read_mariadb_fault_code_mode_data(
+    config: dict,
+    table: str,
+    since: datetime,
+    until: datetime,
+    limit: int,
+    bucket_seconds: int,
+):
+    import pandas as pd
+    import pymysql
+
+    sql = (
+        "SELECT bucket_index, `timestamp`, fault_code, cnt, last_seen FROM ("
+        "  SELECT "
+        "    FLOOR(UNIX_TIMESTAMP(`timestamp`) / %s) AS bucket_index, "
+        "    FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(`timestamp`) / %s) * %s) AS `timestamp`, "
+        "    CAST(`fault_code` AS SIGNED) AS fault_code, "
+        "    COUNT(*) AS cnt, "
+        "    MAX(`timestamp`) AS last_seen "
+        f"  FROM `{table}` "
+        "  WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "  GROUP BY bucket_index, fault_code"
+        ") grouped "
+        "ORDER BY `timestamp` DESC LIMIT %s"
+    )
+
+    query_limit = max(1, limit) * 32
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[
+                bucket_seconds,
+                bucket_seconds,
+                bucket_seconds,
+                since,
+                until,
+                query_limit,
+            ],
+        )
+
+    if df.empty:
+        return normalize_dataframe(df)
+
+    grouped_df = df.sort_values(
+        ["bucket_index", "cnt", "last_seen", "fault_code"],
+        ascending=[True, False, False, False],
+    )
+    mode_df = grouped_df.drop_duplicates(subset=["bucket_index"], keep="first")
+    mode_df = mode_df[["timestamp", "fault_code"]].rename(
+        columns={"fault_code": "fault_code_mode"}
+    )
+    mode_df = mode_df.sort_values("timestamp", ascending=False).head(limit)
+    return normalize_dataframe(mode_df)
+
+
+def read_sqlite_fault_events(
+    database_path: Path,
+    table: str,
+    since: datetime,
+    until: datetime,
+    limit: int,
+):
+    import pandas as pd
+
+    sql = (
+        "SELECT timestamp, inverter_name, inverter_id, fault_code "
+        f"FROM \"{table}\" "
+        "WHERE timestamp >= ? AND timestamp <= ? AND CAST(\"fault_code\" AS INTEGER) != 0 "
+        "ORDER BY timestamp DESC LIMIT ?"
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[since.isoformat(), until.isoformat(), limit],
+        )
+
+    return normalize_dataframe(df)
+
+
+def read_mariadb_fault_events(
+    config: dict,
+    table: str,
+    since: datetime,
+    until: datetime,
+    limit: int,
+):
+    import pandas as pd
+    import pymysql
+
+    sql = (
+        "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code` "
+        f"FROM `{table}` "
+        "WHERE `timestamp` >= %s AND `timestamp` <= %s AND CAST(`fault_code` AS SIGNED) != 0 "
+        "ORDER BY `timestamp` DESC LIMIT %s"
+    )
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[since, until, limit],
+        )
+
+    return normalize_dataframe(df)
+
+
 def format_table_header(column: str, lang: str) -> str:
     label = TABLE_LABELS[lang].get(column, column)
     return (
@@ -1086,7 +1313,16 @@ def read_sqlite_data(
             ],
         )
 
-    return normalize_dataframe(df)
+    df = normalize_dataframe(df)
+    mode_df = read_sqlite_fault_code_mode_data(
+        database_path=database_path,
+        table=table,
+        since=since,
+        until=until,
+        limit=limit,
+        bucket_seconds=bucket_seconds,
+    )
+    return merge_mode_fault_code(df, mode_df)
 
 
 def read_mariadb_data(
@@ -1144,7 +1380,85 @@ def read_mariadb_data(
             ],
         )
 
-    return normalize_dataframe(df)
+    df = normalize_dataframe(df)
+    mode_df = read_mariadb_fault_code_mode_data(
+        config=config,
+        table=table,
+        since=since_naive,
+        until=until_naive,
+        limit=limit,
+        bucket_seconds=bucket_seconds,
+    )
+    return merge_mode_fault_code(df, mode_df)
+
+
+def read_fault_events(
+    source: str,
+    since: datetime,
+    until: datetime,
+    limit: int = 200,
+):
+    if source == "MariaDB":
+        config = get_mariadb_config()
+        validate_mariadb_config(config)
+        table = require_mariadb_identifier(config["table"], "table")
+        since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
+        until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
+        return read_mariadb_fault_events(
+            config=config,
+            table=table,
+            since=since_naive,
+            until=until_naive,
+            limit=limit,
+        )
+
+    config = get_sqlite_config()
+    database_path = Path(config["path"]).expanduser()
+    table = require_sqlite_identifier(config["table"], "table")
+    if not database_path.is_file():
+        raise RuntimeError(f"SQLite database not found: {database_path}")
+
+    return read_sqlite_fault_events(
+        database_path=database_path,
+        table=table,
+        since=since,
+        until=until,
+        limit=limit,
+    )
+
+
+def render_fault_events_table(
+    st,
+    fault_events_df,
+    text: dict[str, str],
+) -> None:
+    import pandas as pd
+
+    if fault_events_df.empty:
+        st.caption(text["fault_events_empty"])
+        return
+
+    display_df = fault_events_df.copy()
+    display_df = display_df.sort_values("timestamp", ascending=False).head(200)
+    display_df["fault_code"] = pd.to_numeric(
+        display_df["fault_code"],
+        errors="coerce",
+    ).fillna(0).astype(int)
+    display_df[text["fault_code_label"]] = display_df["fault_code"].map(
+        lambda code: get_fault_code_label(int(code)) or f"FAULT CODE {int(code)}"
+    )
+
+    st.dataframe(
+        display_df[[
+            "timestamp",
+            "inverter_name",
+            "inverter_id",
+            "fault_code",
+            text["fault_code_label"],
+        ]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def render_dashboard_body(
@@ -1295,6 +1609,15 @@ def render_dashboard_body(
                         metric_name,
                         metric_labels[metric_name],
                     )
+
+    st.subheader(text["fault_events"])
+    st.caption(text["fault_events_caption"])
+    try:
+        fault_events_df = read_fault_events(source, since, until, limit=200)
+    except Exception as e:
+        st.warning(str(e))
+    else:
+        render_fault_events_table(st, fault_events_df, text)
 
     st.subheader(text["latest_rows"])
     display_columns = [
