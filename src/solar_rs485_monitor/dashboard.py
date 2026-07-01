@@ -1940,7 +1940,7 @@ def run_app() -> None:
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],
             BUCKET_SECONDS,
-            index=BUCKET_SECONDS.index(60),
+            index=BUCKET_SECONDS.index(600),
             format_func=lambda value: BUCKET_LABELS[lang][value],
         )
         limit = st.number_input(
