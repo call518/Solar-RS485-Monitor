@@ -30,6 +30,9 @@ DASHBOARD_RUN_ON_SAVE="false"
 # Supported values: 0, 10, 30, 60, 120, 300, 600
 # Values between 1 and 9 are clamped to 10.
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
+# Default time axis scale in dashboard sidebar.
+# Supported values (case-insensitive): fixed, auto
+DASHBOARD_TIME_AXIS_MODE="auto"
 # Default dashboard language at startup. Supported (case-insensitive):
 # English, Korean
 DASHBOARD_LANGUAGE="English"

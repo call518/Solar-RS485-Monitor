@@ -34,6 +34,7 @@ CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
 DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
+DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -410,6 +411,15 @@ def get_dashboard_auto_refresh_seconds() -> int:
         return value
 
     return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
+
+
+def get_dashboard_time_axis_mode() -> str:
+    mode = os.getenv("DASHBOARD_TIME_AXIS_MODE", "").strip().lower()
+
+    if mode in {"fixed", "auto"}:
+        return mode
+
+    return DEFAULT_DASHBOARD_TIME_AXIS_MODE
 
 
 def is_operation_stopped(fault_code: int) -> bool:
@@ -2758,7 +2768,9 @@ def run_app() -> None:
         )
 
         query_axis_mode = get_query_param("axis")
-        default_axis_mode = query_axis_mode if query_axis_mode in {"fixed", "auto"} else "fixed"
+        default_axis_mode = get_dashboard_time_axis_mode()
+        if query_axis_mode in {"fixed", "auto"}:
+            default_axis_mode = query_axis_mode
         axis_mode = st.selectbox(
             text["x_axis_mode"],
             ["fixed", "auto"],
