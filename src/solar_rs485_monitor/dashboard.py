@@ -311,6 +311,16 @@ RANGES = {
     "Last 6 months": timedelta(days=183),
 }
 
+CALENDAR_DAY_RANGE_NAMES = {
+    "Today",
+    "Last 2 days",
+    "Last 3 days",
+    "Last 7 days",
+    "Last 30 days",
+    "Last 90 days",
+    "Last 6 months",
+}
+
 MAX_AGGREGATE_METRICS = {
     "total_generation_kwh",
     "fault_code",
@@ -1029,10 +1039,16 @@ def get_time_bounds(
     display_timezone: ZoneInfo,
 ) -> tuple[datetime, datetime]:
     now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(display_timezone)
 
     if range_name == "Today":
-        now_local = now_utc.astimezone(display_timezone)
         start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_local.astimezone(timezone.utc), now_utc
+
+    if range_name in CALENDAR_DAY_RANGE_NAMES:
+        range_days = max(1, int(RANGES[range_name].total_seconds() // 86400))
+        start_date = now_local.date() - timedelta(days=range_days - 1)
+        start_local = datetime.combine(start_date, datetime.min.time(), tzinfo=display_timezone)
         return start_local.astimezone(timezone.utc), now_utc
 
     return now_utc - RANGES[range_name], now_utc
@@ -2340,12 +2356,16 @@ def render_daily_generation_chart(
             value_by_day[day_label] = value_by_day.get(day_label, 0.0) + float(row["value"])
 
     if fixed_time_axis:
-        start_day = since.astimezone(display_timezone).date()
         end_day = until.astimezone(display_timezone).date()
-        day_count = (end_day - start_day).days + 1
+        duration_seconds = max(
+            0.0,
+            (until.astimezone(timezone.utc) - since.astimezone(timezone.utc)).total_seconds(),
+        )
+        day_count = max(1, math.ceil(duration_seconds / 86400.0))
+        start_day = end_day - timedelta(days=day_count - 1)
         categories = [
             (start_day + timedelta(days=offset)).strftime("%Y-%m-%d")
-            for offset in range(max(0, day_count))
+            for offset in range(day_count)
         ]
     else:
         categories = sorted(value_by_day.keys())
