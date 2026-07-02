@@ -35,6 +35,11 @@ from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
 )
+from solar_rs485_monitor.alerts.telegram import (
+    get_telegram_config,
+    has_telegram_config,
+    write_to_telegram,
+)
 from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
@@ -149,6 +154,46 @@ def parse_collector_sinks(value: str) -> set[str]:
     return sinks
 
 
+def parse_alert_channels(value: str) -> set[str]:
+    channel_text = value.strip()
+
+    if not channel_text:
+        return set()
+
+    aliases = {
+        "telegram": "telegram",
+        "tg": "telegram",
+    }
+    requested = {
+        item.strip().lower().replace("-", "_")
+        for item in channel_text.split(",")
+        if item.strip()
+    }
+
+    if "all" in requested:
+        return {"all"}
+
+    channels = set()
+    invalid = []
+
+    for channel in requested:
+        canonical = aliases.get(channel)
+
+        if canonical is None:
+            invalid.append(channel)
+            continue
+
+        channels.add(canonical)
+
+    if invalid:
+        raise RuntimeError(
+            "Invalid ALERT_CHANNELS value(s): "
+            + ", ".join(sorted(invalid))
+        )
+
+    return channels
+
+
 def has_cli_sink_flags(args: argparse.Namespace) -> bool:
     return any(
         [
@@ -158,6 +203,15 @@ def has_cli_sink_flags(args: argparse.Namespace) -> bool:
             args.sqlite,
             args.opensearch,
             args.all_sinks,
+        ]
+    )
+
+
+def has_cli_alert_flags(args: argparse.Namespace) -> bool:
+    return any(
+        [
+            args.telegram,
+            args.all_alerts,
         ]
     )
 
@@ -177,6 +231,19 @@ def apply_sink_selection(args: argparse.Namespace) -> None:
     args.mariadb = "mariadb" in sinks
     args.sqlite = "sqlite" in sinks
     args.opensearch = "opensearch" in sinks
+
+
+def apply_alert_selection(args: argparse.Namespace) -> None:
+    if has_cli_alert_flags(args):
+        return
+
+    channels = parse_alert_channels(os.getenv("ALERT_CHANNELS", ""))
+
+    if "all" in channels:
+        args.all_alerts = True
+        return
+
+    args.telegram = "telegram" in channels
 
 
 def now_utc_iso() -> str:
@@ -207,6 +274,15 @@ def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
         **timestamp_fields(),
         "inverter_name": inverter_name,
         "sink": sink,
+        "error": str(error),
+    })
+
+
+def print_alert_error(inverter_name: str, alert: str, error: Exception) -> None:
+    print_section_json(alert, {
+        **timestamp_fields(),
+        "inverter_name": inverter_name,
+        "alert": alert,
         "error": str(error),
     })
 
@@ -472,6 +548,12 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--telegram",
+        action="store_true",
+        help="Send fault alert messages to Telegram",
+    )
+
+    parser.add_argument(
         "--mariadb",
         action="store_true",
         help="Write collected data to MariaDB",
@@ -493,6 +575,12 @@ def main() -> None:
         "--all-sinks",
         action="store_true",
         help="Write collected data to all configured sinks",
+    )
+
+    parser.add_argument(
+        "--all-alerts",
+        action="store_true",
+        help="Send alert messages to all configured alert channels",
     )
 
     args = parser.parse_args()
@@ -517,6 +605,7 @@ def main() -> None:
     collect_interval = get_loop_interval(args.loop, args.interval)
 
     apply_sink_selection(args)
+    apply_alert_selection(args)
 
     if args.all_sinks:
         args.google_sheet = True
@@ -524,6 +613,9 @@ def main() -> None:
         args.mariadb = True
         args.sqlite = True
         args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
+
+    if args.all_alerts:
+        args.telegram = has_telegram_config(get_telegram_config())
 
     worksheet = None
     if args.google_sheet:
@@ -566,6 +658,17 @@ def main() -> None:
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="opensearch",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
+
+    telegram_config = None
+    if args.telegram:
+        try:
+            telegram_config = get_telegram_config()
+        except Exception as e:
+            print_alert_error(
+                inverter_name=inverter_name,
+                alert="telegram",
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -681,6 +784,32 @@ def main() -> None:
                     print_sink_error(
                         inverter_name=inverter_name,
                         sink="opensearch",
+                        error=e,
+                    )
+
+            if telegram_config is not None:
+                try:
+                    telegram_result = write_to_telegram(
+                        data=result,
+                        config=telegram_config,
+                    )
+                    summary_result = telegram_result.get("summary") or {}
+                    fault_event_result = telegram_result.get("fault_event") or {}
+                    print_section_json("[Alert] Telegram", {
+                        **timestamp_fields(),
+                        "inverter_name": inverter_name,
+                        "alert": "telegram",
+                        "telegram_chat_targets": len(telegram_result.get("chat_ids", [])),
+                        "telegram_summary_sent_count": len(summary_result.get("sent", [])),
+                        "telegram_summary_failed_count": len(summary_result.get("failed", [])),
+                        "telegram_fault_event_sent_count": len(fault_event_result.get("sent", [])),
+                        "telegram_fault_event_failed_count": len(fault_event_result.get("failed", [])),
+                        "telegram_skipped": bool(telegram_result.get("skipped", False)),
+                    })
+                except Exception as e:
+                    print_alert_error(
+                        inverter_name=inverter_name,
+                        alert="telegram",
                         error=e,
                     )
 

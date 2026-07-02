@@ -4,7 +4,7 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
 ## Sink Screenshots
 
@@ -61,7 +61,7 @@ When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inv
 | Status | `fault` | Numeric fault status derived from `fault_code` |
 | Debug | `raw_frame_hex` | Raw response frame for troubleshooting |
 
-The same parsed record can be printed as JSON and optionally written to SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch.
+The same parsed record can be printed as JSON and optionally written to SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch. Telegram is used as an alert channel for fault events.
 
 ## Supported Inverter Scope
 
@@ -176,6 +176,7 @@ DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS="admin"
 COLLECT_INTERVAL="60"
 PYTHON_VENV_PATH="/opt/myapp/.venv"
 COLLECTOR_SINKS="all"
+ALERT_CHANNELS="telegram"
 ```
 
 `DASHBOARD_TITLE` sets the Streamlit dashboard browser title and page heading.
@@ -195,6 +196,8 @@ COLLECTOR_SINKS="all"
 `PYTHON_VENV_PATH` is used by the sample systemd units to prepend `${PYTHON_VENV_PATH}/bin` to `PATH` before launching the collector and dashboard commands.
 
 `COLLECTOR_SINKS` is used only when no sink CLI flags are provided. Use `all` or a comma-separated list such as `mariadb,thingspeak,opensearch`.
+
+`ALERT_CHANNELS` is used only when no alert CLI flags are provided. Use `all` or a comma-separated list such as `telegram`.
 
 ## Setup
 
@@ -358,6 +361,12 @@ Write collected data to ThingSpeak:
 solar-rs485-monitor --thingspeak
 ```
 
+Send fault alert messages to Telegram:
+
+```bash
+solar-rs485-monitor --telegram
+```
+
 Write collected data to MariaDB:
 
 ```bash
@@ -386,6 +395,12 @@ Repeat collection and write to ThingSpeak:
 
 ```bash
 solar-rs485-monitor --interval 60 --thingspeak
+```
+
+Repeat collection and send to Telegram:
+
+```bash
+solar-rs485-monitor --interval 60 --telegram
 ```
 
 Repeat collection and write to MariaDB:
@@ -418,9 +433,17 @@ Or enable every configured sink with one option:
 solar-rs485-monitor --loop --all-sinks
 ```
 
-With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing OpenSearch configuration to be reported as an error.
+With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing configuration to be reported as an error.
 
-External logging failures are isolated. If SQLite, Google Sheets, ThingSpeak, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that sink and continues the remaining work. A failed sink does not stop inverter collection or block another enabled sink.
+Or enable every configured alert channel with one option:
+
+```bash
+solar-rs485-monitor --loop --all-alerts
+```
+
+With `--all-alerts`, Telegram is enabled only when `TELEGRAM_BOT_TOKEN` and at least one target (`TELEGRAM_CHAT_ID` or `TELEGRAM_CHAT_IDS`) are set. Use `--telegram` explicitly if you want missing configuration to be reported as an error.
+
+External sink/alert failures are isolated. If SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that channel and continues the remaining work. A failed sink or alert does not stop inverter collection or block another enabled channel.
 
 ## systemd Service
 
@@ -433,7 +456,7 @@ ExecStart=/usr/bin/env PATH=${PYTHON_VENV_PATH}/bin:/usr/local/sbin:/usr/local/b
 
 Before installing it, set `PYTHON_VENV_PATH` in `/etc/solar-rs485-monitor.conf` to your virtualenv root, for example `/opt/myapp/.venv`.
 
-The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL` or `COLLECTOR_SINKS` in that config file to adjust daemon behavior without editing the systemd unit.
+The service uses the normal config lookup order. Put the daemon config at `/etc/solar-rs485-monitor.conf` unless you have a specific reason to keep it next to the executable. Change `COLLECT_INTERVAL`, `COLLECTOR_SINKS`, or `ALERT_CHANNELS` in that config file to adjust daemon behavior without editing the systemd unit.
 
 Example install commands:
 
@@ -454,7 +477,28 @@ sudo systemctl start solar-rs485-monitor
 sudo journalctl -u solar-rs485-monitor -f
 ```
 
-If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--sqlite` or `--sqlite --thingspeak --mariadb --opensearch`.
+If you only want selected sinks in the service, replace `--all-sinks` with explicit flags such as `--sqlite` or `--sqlite --thingspeak --mariadb --opensearch`. For alerts, use `--telegram` or `--all-alerts`.
+
+## Telegram Configuration
+
+To use Telegram alerting (`--telegram` or `--all-alerts`), configure these values in `solar-rs485-monitor.conf`:
+
+```env
+TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_IDS=""
+TELEGRAM_MESSAGE_THREAD_ID=""
+TELEGRAM_TIMEOUT="5.0"
+TELEGRAM_DISABLE_NOTIFICATION="false"
+TELEGRAM_PARSE_MODE="Markdown"
+TELEGRAM_SEND_SUMMARY="false"
+TELEGRAM_SEND_FAULT_EVENT="true"
+```
+
+`TELEGRAM_BOT_TOKEN` is the bot API token from BotFather. `TELEGRAM_CHAT_IDS` accepts a comma-separated list of target chat/group IDs for fan-out delivery. For forum topics, set `TELEGRAM_MESSAGE_THREAD_ID`.
+
+If multiple targets are configured, the alert attempts delivery to all of them. A failed target does not stop delivery to other targets.
+
+By default, the alert channel skips normal measurements and sends messages only when a fault event is detected (`fault=1` or `fault_code != 0`). The fault event message includes key measurement values and active fault bits. Set `TELEGRAM_SEND_SUMMARY="true"` if you also want a summary message on each detected event.
 
 ## Dashboard
 
@@ -769,5 +813,6 @@ Errors are also printed as JSON:
 - `SQLite unable to open database file`: check `SQLITE_PATH` and directory write permissions.
 - `OPENSEARCH_URL is not set`: set the OpenSearch endpoint before running with `--opensearch`.
 - `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
+- `Telegram request failed`: check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, bot permissions in the target group, and outbound network access to `api.telegram.org`.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.

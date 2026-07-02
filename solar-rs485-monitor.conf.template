@@ -6,13 +6,18 @@
 # Values below 10 seconds are clamped to 10 seconds.
 COLLECT_INTERVAL="60"
 
-# Python virtual environment path used by systemd service PATH.
+# Telegram Alert
+# Alert channel settings for fault event notifications.
 PYTHON_VENV_PATH="/opt/myapp/.venv"
 
-# Default collector sinks used only when no sink CLI flags are provided.
-# Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
-# Multiple sinks can be comma-separated, for example: mariadb,thingspeak
+# [Sink] Default collector sinks used only when no sink CLI flags are provided.
+# [Sink] Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
+# [Sink] Multiple sinks can be comma-separated, for example: mariadb,thingspeak
 COLLECTOR_SINKS="all"
+
+# [Alert] Default alert channels used only when no alert CLI flags are provided.
+# [Alert] Supported values: all, telegram
+ALERT_CHANNELS="telegram"
 
 # Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
@@ -69,13 +74,28 @@ INVERTER_DATA_LENGTH="26"
 INVERTER_CRC_ORDER="LH"
 
 #
-# ThingSpeak
+# [Alert] Telegram
+# [Alert] Alert channel settings for fault event notifications.
+#
+TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
+# [Alert] Optional comma-separated target chat/group IDs for fan-out delivery.
+# [Alert] Example: "31627266,-4296182742,-8346162149"
+TELEGRAM_CHAT_IDS=""
+TELEGRAM_MESSAGE_THREAD_ID=""
+TELEGRAM_TIMEOUT="5.0"
+TELEGRAM_DISABLE_NOTIFICATION="false"
+TELEGRAM_PARSE_MODE="Markdown"
+TELEGRAM_SEND_SUMMARY="false"
+TELEGRAM_SEND_FAULT_EVENT="true"
+
+#
+# [Sink] ThingSpeak
 #
 THINGSPEAK_API_KEY="YOUR_THINGSPEAK_WRITE_API_KEY"
 THINGSPEAK_TIMEOUT="5.0"
 
 #
-# MariaDB
+# [Sink] MariaDB
 #
 MARIADB_HOST="YOUR_MARIADB_HOST"
 MARIADB_PORT="3306"
@@ -84,13 +104,17 @@ MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
 MARIADB_DATABASE="solar_rs485_monitor"
 MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
-# SQLite is the simplest local sink. The database file and table are created
-# automatically when --sqlite or --all-sinks is used.
+
+#
+# [Sink] SQLite
+#
+# [Sink] SQLite is the simplest local sink. The database file and table are
+# [Sink] created automatically when --sqlite or --all-sinks is used.
 SQLITE_PATH="/var/lib/solar-rs485-monitor/solar-rs485-monitor.sqlite3"
 SQLITE_TABLE="inverter_log"
 
 #
-# OpenSearch / Elasticsearch
+# [Sink] OpenSearch / Elasticsearch
 #
 OPENSEARCH_URL="https://YOUR_OPENSEARCH_HOST:9200"
 OPENSEARCH_INDEX="solar-rs485-monitor"
@@ -100,13 +124,13 @@ OPENSEARCH_TIMEOUT="5.0"
 OPENSEARCH_VERIFY_TLS="true"
 
 #
-# Google Sheets
+# [Sink] Google Sheets
 #
 GOOGLE_SHEET_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
 GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
 
 #
-# Google Service Account
+# [Sink] Google Service Account
 #
 GOOGLE_TYPE="service_account"
 GOOGLE_PROJECT_ID="your-project-id"
