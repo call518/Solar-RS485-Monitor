@@ -45,6 +45,7 @@ DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS = 86400
 DEFAULT_DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS = "admin"
 DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60
 DASHBOARD_AUTH_CHALLENGE_TTL_SECONDS = 120
+CRYPTO_JS_ASSET_PATH = Path(__file__).resolve().parent / "assets" / "crypto-js-4.2.0.min.js"
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
@@ -96,7 +97,7 @@ UI_TEXT = {
         "login_password": "비밀번호",
         "login_button": "로그인",
         "login_failed": "아이디 또는 비밀번호가 올바르지 않습니다.",
-        "login_browser_unsupported": "브라우저에서 WebCrypto를 지원하지 않아 로그인할 수 없습니다.",
+        "login_browser_unsupported": "브라우저 암호화 모듈을 로드하지 못해 로그인할 수 없습니다.",
         "logout": "로그아웃",
         "auth_not_configured": "대시보드 인증이 켜져 있지만 DASHBOARD_AUTH_USERS가 설정되지 않았습니다.",
         "login_success": "로그인되었습니다. 대시보드를 여는 중입니다.",
@@ -142,7 +143,7 @@ UI_TEXT = {
         "login_password": "Password",
         "login_button": "Log in",
         "login_failed": "Invalid username or password.",
-        "login_browser_unsupported": "Cannot log in because this browser does not support WebCrypto.",
+        "login_browser_unsupported": "Cannot log in because the browser crypto module failed to load.",
         "logout": "Log out",
         "auth_not_configured": "Dashboard authentication is enabled, but DASHBOARD_AUTH_USERS is not set.",
         "login_success": "Login successful. Opening dashboard.",
@@ -771,38 +772,44 @@ def render_dashboard_auth_proof_cookie_script(st, payload: str | None, max_age: 
 
 
 def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str]) -> None:
-        import streamlit.components.v1 as components
+    import streamlit.components.v1 as components
 
-        challenge = build_dashboard_auth_challenge()
-        user_config = {}
-        for username, encoded_hash in users.items():
-                parsed = parse_dashboard_password_hash(encoded_hash)
-                if not parsed:
-                        continue
+    try:
+        crypto_js_source = CRYPTO_JS_ASSET_PATH.read_text(encoding="utf-8")
+    except OSError:
+        st.error(text["login_browser_unsupported"])
+        return
 
-                iterations, salt_hex, _ = parsed
-                user_config[username] = {
-                        "iterations": iterations,
-                        "salt": salt_hex,
-                }
+    challenge = build_dashboard_auth_challenge()
+    user_config = {}
+    for username, encoded_hash in users.items():
+        parsed = parse_dashboard_password_hash(encoded_hash)
+        if not parsed:
+            continue
 
-        payload = {
-                "labels": {
-                        "login_failed": text["login_failed"],
-                        "browser_unsupported": text["login_browser_unsupported"],
-                },
-                "challenge": {
-                        "nonce": str(challenge["nonce"]),
-                        "expires_at": int(challenge["expires_at"]),
-                        "signature": str(challenge["signature"]),
-                },
-                "users": user_config,
-                "proof_cookie_name": DASHBOARD_AUTH_PROOF_COOKIE_NAME,
+        iterations, salt_hex, _ = parsed
+        user_config[username] = {
+            "iterations": iterations,
+            "salt": salt_hex,
         }
-        payload_json = json.dumps(payload).replace("</", "<\\/")
 
-        components.html(
-                f"""
+    payload = {
+        "labels": {
+            "login_failed": text["login_failed"],
+            "browser_unsupported": text["login_browser_unsupported"],
+        },
+        "challenge": {
+            "nonce": str(challenge["nonce"]),
+            "expires_at": int(challenge["expires_at"]),
+            "signature": str(challenge["signature"]),
+        },
+        "users": user_config,
+        "proof_cookie_name": DASHBOARD_AUTH_PROOF_COOKIE_NAME,
+    }
+    payload_json = json.dumps(payload).replace("</", "<\\/")
+
+    components.html(
+        f"""
                 <div style="display:flex; flex-direction:column; gap:0.5rem;">
                     <label for="dashboard-login-user" style="font-weight:600;">{html.escape(text["login_user"])} </label>
                     <input id="dashboard-login-user" autocomplete="username"
@@ -823,70 +830,52 @@ def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str])
                     const submitButton = document.getElementById("dashboard-login-submit");
                     const errorBox = document.getElementById("dashboard-login-client-error");
 
+                    function ensureCryptoJsLoaded() {{
+                        if (window.CryptoJS) {{
+                            return Promise.resolve(window.CryptoJS);
+                        }}
+
+                        try {{
+                            const script = document.createElement("script");
+                            script.type = "text/javascript";
+                            script.text = {json.dumps(crypto_js_source)};
+                            document.head.appendChild(script);
+                        }} catch (error) {{
+                            return Promise.reject(new Error(config.labels.browser_unsupported));
+                        }}
+
+                        if (!window.CryptoJS) {{
+                            return Promise.reject(new Error(config.labels.browser_unsupported));
+                        }}
+
+                        return Promise.resolve(window.CryptoJS);
+                    }}
+
                     function setError(message) {{
                         errorBox.textContent = message || "";
                     }}
 
-                    function bytesToHex(buffer) {{
-                        const bytes = new Uint8Array(buffer);
-                        let hex = "";
-                        for (const value of bytes) {{
-                            hex += value.toString(16).padStart(2, "0");
-                        }}
-                        return hex;
-                    }}
-
-                    function hexToBytes(hexString) {{
-                        if (hexString.length % 2 !== 0) {{
-                            throw new Error("invalid hex");
-                        }}
-                        const bytes = new Uint8Array(hexString.length / 2);
-                        for (let i = 0; i < hexString.length; i += 2) {{
-                            bytes[i / 2] = Number.parseInt(hexString.slice(i, i + 2), 16);
-                        }}
-                        return bytes;
-                    }}
-
                     async function buildProof(username, password, selectedUser) {{
-                        if (!window.crypto || !window.crypto.subtle) {{
+                        const CryptoJS = await ensureCryptoJsLoaded();
+                        if (!CryptoJS) {{
                             throw new Error(config.labels.browser_unsupported);
                         }}
 
-                        const passwordKey = await window.crypto.subtle.importKey(
-                            "raw",
-                            new TextEncoder().encode(password),
-                            "PBKDF2",
-                            false,
-                            ["deriveBits"],
-                        );
-
-                        const derivedBits = await window.crypto.subtle.deriveBits(
+                        const derivedKey = CryptoJS.PBKDF2(
+                            password,
+                            CryptoJS.enc.Hex.parse(selectedUser.salt),
                             {{
-                                name: "PBKDF2",
-                                hash: "SHA-256",
-                                salt: hexToBytes(selectedUser.salt),
+                                hasher: CryptoJS.algo.SHA256,
                                 iterations: Number(selectedUser.iterations),
-                            }},
-                            passwordKey,
-                            256,
-                        );
-
-                        const hmacKey = await window.crypto.subtle.importKey(
-                            "raw",
-                            derivedBits,
-                            {{ name: "HMAC", hash: "SHA-256" }},
-                            false,
-                            ["sign"],
+                                keySize: 256 / 32,
+                            }}
                         );
 
                         const message = `${{username}}\\n${{config.challenge.nonce}}\\n${{config.challenge.expires_at}}`;
-                        const signature = await window.crypto.subtle.sign(
-                            "HMAC",
-                            hmacKey,
-                            new TextEncoder().encode(message),
-                        );
-
-                        return bytesToHex(signature);
+                        return CryptoJS.HmacSHA256(
+                            message,
+                            CryptoJS.enc.Hex.parse(derivedKey.toString(CryptoJS.enc.Hex)),
+                        ).toString(CryptoJS.enc.Hex);
                     }}
 
                     async function submitLogin() {{
@@ -933,8 +922,8 @@ def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str])
                     }});
                 </script>
                 """,
-                height=280,
-        )
+            height=280,
+            )
 
 
 def clear_dashboard_auth_session(st) -> None:
