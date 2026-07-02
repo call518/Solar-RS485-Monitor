@@ -734,9 +734,11 @@ Set `OPENSEARCH_USERNAME` and `OPENSEARCH_PASSWORD` together when the cluster re
 To use `--google-sheet`, configure these values in `solar-rs485-monitor.conf`:
 
 ```env
-GOOGLE_SHEET_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
+GOOGLE_SHEET_FILE_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
 GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
 ```
+
+`GOOGLE_WORKSHEET_NAME` supports `strftime` patterns. For monthly tabs, set it to `"%Y-%m"`, and writes will rotate automatically to worksheet names such as `2026-06` and `2026-07` based on collection time. If a target monthly worksheet does not exist, it is created automatically.
 
 Also provide the Google service account fields from `solar-rs485-monitor.conf.template`.
 
@@ -819,4 +821,4 @@ Errors are also printed as JSON:
 - `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
 - `Telegram request failed`: check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, bot permissions in the target group, and outbound network access to `api.telegram.org`.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
-- `Google worksheet not found`: create the worksheet tab or fix `GOOGLE_WORKSHEET_NAME`.
+- `Google worksheet header mismatch`: check that row 1 header columns match the expected schema.

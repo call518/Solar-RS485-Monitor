@@ -612,10 +612,11 @@ def main() -> None:
 
     requested_alert_channels = get_requested_alert_channels(args)
 
-    worksheet = None
+    google_sheet_enabled = False
     if args.google_sheet:
         try:
-            worksheet = get_google_sheet()
+            get_google_sheet()
+            google_sheet_enabled = True
         except Exception as e:
             print_sink_error(
                 inverter_name=inverter_name,
@@ -695,8 +696,9 @@ def main() -> None:
 
             print_section_json("inverter", result)
 
-            if worksheet is not None:
+            if google_sheet_enabled:
                 try:
+                    worksheet = get_google_sheet()
                     write_to_google_sheet(worksheet, result)
                     print_section_json("[Sink] Google Sheet", {
                         **timestamp_fields(),
