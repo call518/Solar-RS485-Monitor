@@ -2702,47 +2702,56 @@ def run_app() -> None:
         # the default UI. Re-enable this selector if SQLite dashboard access is
         # needed again.
         # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
+
         range_options = list(RANGES.keys())
-        query_range = get_query_param("range")
-        default_range_name = query_range if query_range in RANGES else "Today"
+        if "dashboard_range_name" not in st.session_state:
+            query_range = get_query_param("range")
+            st.session_state["dashboard_range_name"] = (
+                query_range if query_range in RANGES else "Today"
+            )
+
         range_name = st.selectbox(
             text["range"],
             range_options,
-            index=range_options.index(default_range_name),
+            key="dashboard_range_name",
             format_func=lambda value: RANGE_LABELS[lang][value],
         )
 
-        query_bucket_seconds = get_query_param("bucket")
-        default_bucket_seconds = 600
-        if query_bucket_seconds is not None:
-            try:
-                parsed_bucket_seconds = int(query_bucket_seconds)
-            except ValueError:
-                parsed_bucket_seconds = 600
-            if parsed_bucket_seconds in BUCKET_SECONDS:
-                default_bucket_seconds = parsed_bucket_seconds
+        if "dashboard_bucket_seconds" not in st.session_state:
+            query_bucket_seconds = get_query_param("bucket")
+            default_bucket_seconds = 600
+            if query_bucket_seconds is not None:
+                try:
+                    parsed_bucket_seconds = int(query_bucket_seconds)
+                except ValueError:
+                    parsed_bucket_seconds = 600
+                if parsed_bucket_seconds in BUCKET_SECONDS:
+                    default_bucket_seconds = parsed_bucket_seconds
+            st.session_state["dashboard_bucket_seconds"] = default_bucket_seconds
 
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],
             BUCKET_SECONDS,
-            index=BUCKET_SECONDS.index(default_bucket_seconds),
+            key="dashboard_bucket_seconds",
             format_func=lambda value: BUCKET_LABELS[lang][value],
         )
 
-        query_limit = get_query_param("limit")
-        default_limit = 50000
-        if query_limit is not None:
-            try:
-                parsed_limit = int(query_limit)
-            except ValueError:
-                parsed_limit = default_limit
-            default_limit = min(300000, max(100, parsed_limit))
+        if "dashboard_limit" not in st.session_state:
+            query_limit = get_query_param("limit")
+            default_limit = 50000
+            if query_limit is not None:
+                try:
+                    parsed_limit = int(query_limit)
+                except ValueError:
+                    parsed_limit = default_limit
+                default_limit = min(300000, max(100, parsed_limit))
+            st.session_state["dashboard_limit"] = default_limit
 
         limit = st.number_input(
             text["max_points"],
             min_value=100,
             max_value=300000,
-            value=default_limit,
+            key="dashboard_limit",
             step=1000,
         )
         st.caption(
@@ -2750,31 +2759,37 @@ def run_app() -> None:
                 bucket=BUCKET_LABELS[lang][bucket_seconds],
             )
         )
-        default_refresh_seconds = get_dashboard_auto_refresh_seconds()
-        query_refresh_seconds = get_query_param("refresh")
-        if query_refresh_seconds is not None:
-            try:
-                parsed_refresh_seconds = int(query_refresh_seconds)
-            except ValueError:
-                parsed_refresh_seconds = default_refresh_seconds
-            if parsed_refresh_seconds in REFRESH_SECONDS:
-                default_refresh_seconds = parsed_refresh_seconds
+
+        if "dashboard_refresh_seconds" not in st.session_state:
+            default_refresh_seconds = get_dashboard_auto_refresh_seconds()
+            query_refresh_seconds = get_query_param("refresh")
+            if query_refresh_seconds is not None:
+                try:
+                    parsed_refresh_seconds = int(query_refresh_seconds)
+                except ValueError:
+                    parsed_refresh_seconds = default_refresh_seconds
+                if parsed_refresh_seconds in REFRESH_SECONDS:
+                    default_refresh_seconds = parsed_refresh_seconds
+            st.session_state["dashboard_refresh_seconds"] = default_refresh_seconds
 
         refresh_seconds = st.selectbox(
             text["auto_refresh"],
             REFRESH_SECONDS,
-            index=REFRESH_SECONDS.index(default_refresh_seconds),
+            key="dashboard_refresh_seconds",
             format_func=lambda value: REFRESH_LABELS[lang][value],
         )
 
-        query_axis_mode = get_query_param("axis")
-        default_axis_mode = get_dashboard_time_axis_mode()
-        if query_axis_mode in {"fixed", "auto"}:
-            default_axis_mode = query_axis_mode
+        if "dashboard_axis_mode" not in st.session_state:
+            query_axis_mode = get_query_param("axis")
+            default_axis_mode = get_dashboard_time_axis_mode()
+            if query_axis_mode in {"fixed", "auto"}:
+                default_axis_mode = query_axis_mode
+            st.session_state["dashboard_axis_mode"] = default_axis_mode
+
         axis_mode = st.selectbox(
             text["x_axis_mode"],
             ["fixed", "auto"],
-            index=0 if default_axis_mode == "fixed" else 1,
+            key="dashboard_axis_mode",
             format_func=lambda value: text[f"x_axis_mode_{value}"],
         )
         fixed_time_axis = axis_mode == "fixed"
@@ -2788,9 +2803,27 @@ def run_app() -> None:
                 "refresh": str(refresh_seconds),
                 "axis": axis_mode,
             }
-            for key, value in desired_query_params.items():
-                if get_query_param(key) != value:
-                    st.query_params[key] = value
+            current_managed_query_params = {
+                key: get_query_param(key) for key in desired_query_params
+            }
+            if current_managed_query_params != desired_query_params:
+                merged_query_params: dict[str, str] = {}
+                if hasattr(st.query_params, "to_dict"):
+                    existing_query_params = st.query_params.to_dict()
+                    for key, value in existing_query_params.items():
+                        if key in desired_query_params:
+                            continue
+                        if isinstance(value, list):
+                            merged_query_params[key] = str(value[0]) if value else ""
+                        else:
+                            merged_query_params[key] = str(value)
+
+                merged_query_params.update(desired_query_params)
+                if hasattr(st.query_params, "from_dict"):
+                    st.query_params.from_dict(merged_query_params)
+                else:
+                    for key, value in merged_query_params.items():
+                        st.query_params[key] = value
 
         render_dashboard_logout(st, text)
 
