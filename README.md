@@ -4,6 +4,8 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
+This project is designed with the REMS (Renewable Energy Monitoring System) standard protocol operated by Korea Energy Agency as the primary baseline. It is currently validated and supported mainly for REMS-oriented usage, and parallel support for more generic Modbus RTU/TCP scenarios is being considered as a future extension.
+
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
 Alert channels use a small dispatcher registry under `src/solar_rs485_monitor/alerts/dispatcher.py` with shared message builders in `src/solar_rs485_monitor/alerts/message.py`. To add a new channel (for example Slack), implement a channel module with `get_config`, `has_config`, and `send_alert`, then register it in the dispatcher.
