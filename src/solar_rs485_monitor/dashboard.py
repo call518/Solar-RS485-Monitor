@@ -1282,6 +1282,22 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
 def chart_title(metric_name: str, latest, metric_labels: dict[str, str]) -> str:
     label = metric_labels.get(metric_name, metric_name)
     value = format_snapshot_value(metric_name, latest.get(metric_name))
+
+    # Merge trailing unit from label (e.g. "... (W)") into "(value unit)".
+    unit = None
+    base_label = label
+
+    if label.endswith(")") and " (" in label:
+        base_label, trailing = label.rsplit(" (", 1)
+        unit_candidate = trailing[:-1].strip()
+        if unit_candidate:
+            unit = unit_candidate
+        else:
+            base_label = label
+
+    if unit is not None:
+        return f"{base_label} ({value} {unit})"
+
     return f"{label} ({value})"
 
 
