@@ -116,6 +116,8 @@ UI_TEXT = {
         "latest_snapshot": "최신 메트릭",
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
+        "daily_generation_chart": "일일 발전량 (kWh/day)",
+        "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
         "fault_events_caption": "선택한 범위에서 fault_code가 0이 아닌 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
@@ -162,6 +164,8 @@ UI_TEXT = {
         "latest_snapshot": "Latest Metrics",
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
+        "daily_generation_chart": "Daily Generation (kWh/day)",
+        "daily_generation_empty": "No daily generation data in the selected range.",
         "fault_events": "Fault Events (Recent 200)",
         "fault_events_caption": "Latest events where fault_code is non-zero within the selected range.",
         "fault_events_empty": "No fault events in the selected range.",
@@ -2107,6 +2111,139 @@ def read_fault_events(
     )
 
 
+def read_mariadb_daily_generation(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+):
+    import pandas as pd
+    import pymysql
+
+    config = get_mariadb_config()
+    validate_mariadb_config(config)
+    table = require_mariadb_identifier(config["table"], "table")
+
+    since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
+    until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
+
+    offset_text = format_timezone_offset(datetime.now(timezone.utc).astimezone(display_timezone))
+    sql = (
+        "SELECT "
+        "DATE(CONVERT_TZ(`timestamp`, '+00:00', %s)) AS day_local, "
+        "GREATEST(MAX(`total_generation_kwh`) - MIN(`total_generation_kwh`), 0) AS daily_generation_kwh "
+        f"FROM `{table}` "
+        "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "GROUP BY day_local "
+        "ORDER BY day_local ASC"
+    )
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[offset_text, since_naive, until_naive],
+        )
+
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp", "value"])
+
+    def to_utc_timestamp(day_text: str):
+        local_dt = datetime.fromisoformat(str(day_text)).replace(tzinfo=display_timezone)
+        return local_dt.astimezone(timezone.utc)
+
+    result = pd.DataFrame(
+        {
+            "timestamp": [to_utc_timestamp(day) for day in df["day_local"]],
+            "value": pd.to_numeric(df["daily_generation_kwh"], errors="coerce").fillna(0.0),
+        }
+    )
+    return result
+
+
+def read_sqlite_daily_generation(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+):
+    import pandas as pd
+
+    config = get_sqlite_config()
+    database_path = Path(config["path"]).expanduser()
+    table = require_sqlite_identifier(config["table"], "table")
+
+    if not database_path.is_file():
+        raise RuntimeError(f"SQLite database not found: {database_path}")
+
+    offset_text = format_timezone_offset(datetime.now(timezone.utc).astimezone(display_timezone))
+    sql = (
+        "SELECT "
+        "date(datetime(CAST(strftime('%s', timestamp) AS INTEGER), 'unixepoch', ?)) AS day_local, "
+        "MAX(CAST(\"total_generation_kwh\" AS REAL)) - MIN(CAST(\"total_generation_kwh\" AS REAL)) "
+        "AS daily_generation_kwh "
+        f"FROM \"{table}\" "
+        "WHERE timestamp >= ? AND timestamp <= ? "
+        "GROUP BY day_local "
+        "ORDER BY day_local ASC"
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_sqlite_table(connection, table)
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[offset_text, since.isoformat(), until.isoformat()],
+        )
+
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp", "value"])
+
+    def to_utc_timestamp(day_text: str):
+        local_dt = datetime.fromisoformat(str(day_text)).replace(tzinfo=display_timezone)
+        return local_dt.astimezone(timezone.utc)
+
+    values = pd.to_numeric(df["daily_generation_kwh"], errors="coerce").fillna(0.0)
+    values = values.clip(lower=0.0)
+    result = pd.DataFrame(
+        {
+            "timestamp": [to_utc_timestamp(day) for day in df["day_local"]],
+            "value": values,
+        }
+    )
+    return result
+
+
+def read_daily_generation(
+    source: str,
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+):
+    if source == "MariaDB":
+        return read_mariadb_daily_generation(
+            since=since,
+            until=until,
+            display_timezone=display_timezone,
+        )
+
+    return read_sqlite_daily_generation(
+        since=since,
+        until=until,
+        display_timezone=display_timezone,
+    )
+
+
 def render_fault_events_table(
     st,
     fault_events_df,
@@ -2158,6 +2295,90 @@ def render_fault_events_table(
             display_timezone,
         ),
         unsafe_allow_html=True,
+    )
+
+
+def render_daily_generation_chart(
+    st,
+    daily_df,
+    title: str,
+    since: datetime,
+    until: datetime,
+    fixed_time_axis: bool,
+) -> None:
+    from streamlit_echarts import st_echarts
+
+    if daily_df.empty:
+        return
+
+    chart_data = daily_df.dropna(subset=["timestamp", "value"]).copy()
+    if chart_data.empty:
+        return
+
+    chart_data = chart_data.sort_values("timestamp")
+    categories = []
+    values = []
+    for _, row in chart_data.iterrows():
+        timestamp = row["timestamp"]
+        if hasattr(timestamp, "to_pydatetime"):
+            timestamp = timestamp.to_pydatetime()
+        if isinstance(timestamp, datetime):
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            categories.append(timestamp.strftime("%Y-%m-%d"))
+        else:
+            categories.append(str(timestamp))
+        values.append(float(row["value"]))
+
+    x_axis = {
+        "type": "category",
+        "data": categories,
+        "axisLabel": {
+            "hideOverlap": True,
+            "interval": "auto",
+        },
+    }
+
+    latest_timestamp = chart_data["timestamp"].max().isoformat()
+    latest_value = float(chart_data["value"].iloc[-1])
+    chart_key = (
+        "echart_daily_generation_"
+        f"{latest_timestamp}_"
+        f"{latest_value:.6f}_"
+        f"{len(chart_data)}"
+    )
+
+    options = {
+        "animation": False,
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "xAxis": x_axis,
+        "yAxis": {
+            "type": "value",
+            "name": title,
+            "scale": True,
+            "min": 0,
+        },
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {"type": "shadow"},
+        },
+        "series": [
+            {
+                "name": title,
+                "type": "bar",
+                "barMaxWidth": 42,
+                "barMinWidth": 16,
+                "itemStyle": {"color": "#0891b2"},
+                "data": values,
+            }
+        ],
+    }
+
+    st_echarts(
+        options=options,
+        height="300px",
+        renderer="svg",
+        key=chart_key,
     )
 
 
@@ -2322,6 +2543,30 @@ def render_dashboard_body(
                     until,
                     fixed_time_axis,
                 )
+
+            if metric_name == "total_generation_kwh":
+                try:
+                    daily_df = read_daily_generation(
+                        source=source,
+                        since=since,
+                        until=until,
+                        display_timezone=display_timezone,
+                    )
+                except Exception as e:
+                    st.warning(str(e))
+                else:
+                    if daily_df.empty:
+                        st.caption(text["daily_generation_empty"])
+                    else:
+                        st.markdown(f"#### {text['daily_generation_chart']}")
+                        render_daily_generation_chart(
+                            st=st,
+                            daily_df=daily_df,
+                            title=text["daily_generation_chart"],
+                            since=since,
+                            until=until,
+                            fixed_time_axis=fixed_time_axis,
+                        )
             continue
 
         chart_columns = st.columns(2)
