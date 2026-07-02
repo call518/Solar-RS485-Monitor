@@ -128,7 +128,6 @@ OPENSEARCH_VERIFY_TLS="true"
 #
 GOOGLE_SHEET_FILE_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
 # [Sink] Supports strftime pattern. Example monthly tabs: "%Y-%m" -> 2026-07
-#GOOGLE_WORKSHEET_NAME="inverter_data"
 GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
 
 #
