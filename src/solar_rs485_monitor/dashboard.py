@@ -116,8 +116,9 @@ UI_TEXT = {
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
-        "fault_events_caption": "선택한 범위에서 fault_code != 0 인 최신 이벤트입니다.",
+        "fault_events_caption": "선택한 범위에서 고장 비트(Bit 1~12)가 활성화된 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
+        "active_bits": "활성 비트",
         "fault_code_label": "점검 코드 설명",
         "latest_rows": "최신 데이터 (최근 200건)",
     },
@@ -161,8 +162,9 @@ UI_TEXT = {
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
         "fault_events": "Fault Events (Recent 200)",
-        "fault_events_caption": "Latest events where fault_code != 0 within the selected range.",
+        "fault_events_caption": "Latest events where fault bits (Bit 1-12) are active within the selected range.",
         "fault_events_empty": "No fault events in the selected range.",
+        "active_bits": "Active bits",
         "fault_code_label": "Fault code detail",
         "latest_rows": "Latest Rows (Recent 200)",
     },
@@ -310,24 +312,24 @@ MAX_AGGREGATE_METRICS = {
     "fault",
 }
 
-FAULT_CODE_LABELS_KO = {
-    1: "P01 태양전지 과전류",
-    2: "P02 태양전지 과전압",
-    3: "P14 태양전지 절연저항 부족",
-    4: "P04 DC LINK 과전압",
-    5: "P05 DC LINK 저전압",
-    6: "G06 인버터 과전류",
-    7: "G07 계통전압 과전압",
-    8: "G08 계통전압 저전압",
-    9: "S09 인버터 내부 과열",
-    10: "G10 계통전압 과주파수",
-    11: "G11 계통전압 저주파수",
-    12: "G13 RCMU 과전류",
-    13: "G18 인버터 과전류2",
-    14: "P19 DC LINK 과전압2",
-    15: "P20 DC LINK 저전압(순시)",
-    16: "S21 릴레이 고장 여부",
-    17: "S22 RCMU 고장 여부",
+FAULT_OPERATION_STOP_BIT = 0
+# Bit 1-12 are fault bits from the inverter remote monitoring status table.
+FAULT_STATUS_MASK = 0x1FFE
+
+FAULT_BIT_LABELS_KO = {
+    0: "Bit 0 인버터 동작유무(미작동)",
+    1: "Bit 1 태양전지 과전압",
+    2: "Bit 2 태양전지 저전압",
+    3: "Bit 3 태양전지 과전류",
+    4: "Bit 4 인버터 IGBT 에러",
+    5: "Bit 5 인버터 과온",
+    6: "Bit 6 계통 과전압",
+    7: "Bit 7 계통 저전압",
+    8: "Bit 8 계통 과전류",
+    9: "Bit 9 계통 과주파수",
+    10: "Bit 10 계통 저주파수",
+    11: "Bit 11 단독운전(정전)",
+    12: "Bit 12 지락(누전)",
 }
 
 
@@ -419,8 +421,40 @@ def get_dashboard_auto_refresh_seconds() -> int:
     return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
 
 
+def is_operation_stopped(fault_code: int) -> bool:
+    return bool(fault_code & (1 << FAULT_OPERATION_STOP_BIT))
+
+
+def has_fault_condition(fault_code: int) -> bool:
+    return bool(fault_code & FAULT_STATUS_MASK)
+
+
 def get_fault_code_label(fault_code: int) -> str | None:
-    return FAULT_CODE_LABELS_KO.get(fault_code)
+    if fault_code <= 0:
+        return None
+
+    labels = []
+
+    for bit in range(16):
+        if not (fault_code & (1 << bit)):
+            continue
+
+        label = FAULT_BIT_LABELS_KO.get(bit)
+        if label:
+            labels.append(label)
+
+    if not labels:
+        return None
+
+    return ", ".join(labels)
+
+
+def format_active_bits(fault_code: int) -> str:
+    if fault_code <= 0:
+        return "-"
+
+    bits = [f"Bit {bit}" for bit in range(16) if fault_code & (1 << bit)]
+    return ", ".join(bits) if bits else "-"
 
 
 def is_dashboard_auth_enabled() -> bool:
@@ -769,7 +803,7 @@ def merge_mode_fault_code(df, mode_df):
 
     if "fault_code" in merged.columns:
         merged["fault_code"] = merged["fault_code"].fillna(0).round().astype(int)
-        merged["fault"] = (merged["fault_code"] != 0).astype(int)
+        merged["fault"] = ((merged["fault_code"] & FAULT_STATUS_MASK) != 0).astype(int)
 
     return merged
 
@@ -911,7 +945,8 @@ def read_sqlite_fault_events(
     sql = (
         "SELECT timestamp, inverter_name, inverter_id, fault_code "
         f"FROM \"{table}\" "
-        "WHERE timestamp >= ? AND timestamp <= ? AND CAST(\"fault_code\" AS INTEGER) != 0 "
+        "WHERE timestamp >= ? AND timestamp <= ? "
+        f"AND (CAST(\"fault_code\" AS INTEGER) & {FAULT_STATUS_MASK}) != 0 "
         "ORDER BY timestamp DESC LIMIT ?"
     )
 
@@ -938,7 +973,8 @@ def read_mariadb_fault_events(
     sql = (
         "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code` "
         f"FROM `{table}` "
-        "WHERE `timestamp` >= %s AND `timestamp` <= %s AND CAST(`fault_code` AS SIGNED) != 0 "
+        "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        f"AND (CAST(`fault_code` AS SIGNED) & {FAULT_STATUS_MASK}) != 0 "
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
 
@@ -1689,6 +1725,9 @@ def render_fault_events_table(
         display_df["fault_code"],
         errors="coerce",
     ).fillna(0).astype(int)
+    display_df[text["active_bits"]] = display_df["fault_code"].map(
+        lambda code: format_active_bits(int(code))
+    )
     display_df[text["fault_code_label"]] = display_df["fault_code"].map(
         lambda code: get_fault_code_label(int(code)) or f"FAULT CODE {int(code)}"
     )
@@ -1699,6 +1738,7 @@ def render_fault_events_table(
             "inverter_name",
             "inverter_id",
             "fault_code",
+            text["active_bits"],
             text["fault_code_label"],
         ]],
         use_container_width=True,
@@ -1747,7 +1787,6 @@ def render_dashboard_body(
     latest = df.sort_values("timestamp").iloc[-1]
     inverter_name = latest.get("inverter_name", "")
     inverter_id = int(latest.get("inverter_id", 0))
-    fault = int(latest.get("fault", 0))
     try:
         output_ac_power_w = float(latest.get("output_ac_power_w", 0.0))
     except (TypeError, ValueError):
@@ -1761,15 +1800,23 @@ def render_dashboard_body(
     except (TypeError, ValueError):
         fault_code = 0
 
-    if is_standby:
+    operation_stopped = is_operation_stopped(fault_code)
+    fault = 1 if has_fault_condition(fault_code) else 0
+
+    if fault:
+        fault_label = text["fault_fault"]
+        fault_color = "#dc2626"
+        fault_bg = "#fee2e2"
+        fault_badge_text = f"{fault_label} ({fault})"
+    elif is_standby or operation_stopped:
         fault_label = text["fault_standby"]
         fault_color = "#475569"
         fault_bg = "#e2e8f0"
         fault_badge_text = fault_label
     else:
-        fault_label = text["fault_fault"] if fault else text["fault_normal"]
-        fault_color = "#dc2626" if fault else "#16a34a"
-        fault_bg = "#fee2e2" if fault else "#dcfce7"
+        fault_label = text["fault_normal"]
+        fault_color = "#16a34a"
+        fault_bg = "#dcfce7"
         fault_badge_text = f"{fault_label} ({fault})"
 
     fault_code_label = get_fault_code_label(fault_code)
@@ -1813,7 +1860,7 @@ def render_dashboard_body(
         {
             (
                 f'<div style="margin-top:0.45rem; font-size:0.95rem; color:#991b1b; font-weight:600;">{html.escape(fault_code_label or f"FAULT CODE {fault_code}")}</div>'
-                if fault and not is_standby
+                if fault
                 else ""
             )
         }

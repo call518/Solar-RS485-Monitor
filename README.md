@@ -723,7 +723,7 @@ For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data
 | `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
 | `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
 | `fault_code` | data 24-25 | 1 | code | Raw fault code |
-| `fault` | derived from `fault_code` | N/A | 0/1 | `1` when `fault_code != 0`, otherwise `0` |
+| `fault` | derived from `fault_code` | N/A | 0/1 | `1` when any fault bit (Bit 1-12) is set, otherwise `0` |
 | `raw_frame_hex` | full frame | N/A | hex bytes | Raw response frame for debugging |
 
 Successful reads include fields such as:
