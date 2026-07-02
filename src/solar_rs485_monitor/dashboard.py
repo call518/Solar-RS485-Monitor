@@ -2137,7 +2137,11 @@ def read_mariadb_daily_generation(
     sql = (
         "SELECT "
         "DATE(CONVERT_TZ(`timestamp`, '+00:00', %s)) AS day_local, "
-        "GREATEST(MAX(`total_generation_kwh`) - MIN(`total_generation_kwh`), 0) AS daily_generation_kwh "
+        "GREATEST(" 
+        "MAX(`total_generation_kwh`) - "
+        "COALESCE(MIN(NULLIF(`total_generation_kwh`, 0)), MAX(`total_generation_kwh`)), "
+        "0"
+        ") AS daily_generation_kwh "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
         "GROUP BY day_local "
@@ -2197,8 +2201,9 @@ def read_sqlite_daily_generation(
     sql = (
         "SELECT "
         "date(datetime(CAST(strftime('%s', timestamp) AS INTEGER), 'unixepoch', ?)) AS day_local, "
-        "MAX(CAST(\"total_generation_kwh\" AS REAL)) - MIN(CAST(\"total_generation_kwh\" AS REAL)) "
-        "AS daily_generation_kwh "
+        "MAX(CAST(\"total_generation_kwh\" AS REAL)) - "
+        "COALESCE(MIN(NULLIF(CAST(\"total_generation_kwh\" AS REAL), 0)), "
+        "MAX(CAST(\"total_generation_kwh\" AS REAL))) AS daily_generation_kwh "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
         "GROUP BY day_local "
@@ -2311,31 +2316,44 @@ def render_daily_generation_chart(
     title: str,
     since: datetime,
     until: datetime,
+    display_timezone: ZoneInfo,
     fixed_time_axis: bool,
 ) -> None:
     from streamlit_echarts import st_echarts
 
-    if daily_df.empty:
-        return
-
     chart_data = daily_df.dropna(subset=["timestamp", "value"]).copy()
-    if chart_data.empty:
-        return
 
-    chart_data = chart_data.sort_values("timestamp")
-    categories = []
-    values = []
-    for _, row in chart_data.iterrows():
-        timestamp = row["timestamp"]
-        if hasattr(timestamp, "to_pydatetime"):
-            timestamp = timestamp.to_pydatetime()
-        if isinstance(timestamp, datetime):
+    value_by_day: dict[str, float] = {}
+    if not chart_data.empty:
+        chart_data = chart_data.sort_values("timestamp")
+        for _, row in chart_data.iterrows():
+            timestamp = row["timestamp"]
+            if hasattr(timestamp, "to_pydatetime"):
+                timestamp = timestamp.to_pydatetime()
+            if not isinstance(timestamp, datetime):
+                continue
+
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
-            categories.append(timestamp.strftime("%Y-%m-%d"))
-        else:
-            categories.append(str(timestamp))
-        values.append(float(row["value"]))
+
+            day_label = timestamp.astimezone(display_timezone).strftime("%Y-%m-%d")
+            value_by_day[day_label] = value_by_day.get(day_label, 0.0) + float(row["value"])
+
+    if fixed_time_axis:
+        start_day = since.astimezone(display_timezone).date()
+        end_day = until.astimezone(display_timezone).date()
+        day_count = (end_day - start_day).days + 1
+        categories = [
+            (start_day + timedelta(days=offset)).strftime("%Y-%m-%d")
+            for offset in range(max(0, day_count))
+        ]
+    else:
+        categories = sorted(value_by_day.keys())
+
+    if not categories:
+        return
+
+    values = [value_by_day.get(day, 0.0) for day in categories]
 
     x_axis = {
         "type": "category",
@@ -2346,13 +2364,14 @@ def render_daily_generation_chart(
         },
     }
 
-    latest_timestamp = chart_data["timestamp"].max().isoformat()
-    latest_value = float(chart_data["value"].iloc[-1])
+    latest_timestamp = categories[-1]
+    latest_value = float(values[-1])
     chart_key = (
         "echart_daily_generation_"
         f"{latest_timestamp}_"
         f"{latest_value:.6f}_"
-        f"{len(chart_data)}"
+        f"{len(categories)}_"
+        f"{int(fixed_time_axis)}"
     )
 
     options = {
@@ -2561,7 +2580,7 @@ def render_dashboard_body(
                 except Exception as e:
                     st.warning(str(e))
                 else:
-                    if daily_df.empty:
+                    if daily_df.empty and not fixed_time_axis:
                         st.caption(text["daily_generation_empty"])
                     else:
                         st.markdown(f"#### {text['daily_generation_chart']}")
@@ -2571,8 +2590,11 @@ def render_dashboard_body(
                             title=text["daily_generation_chart"],
                             since=since,
                             until=until,
+                            display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
+                        if daily_df.empty:
+                            st.caption(text["daily_generation_empty"])
             continue
 
         chart_columns = st.columns(2)
