@@ -1371,7 +1371,11 @@ def render_total_generation_echart(
 
     x_axis = {
         "type": "time",
-        "axisLabel": {"formatter": "{MM}-{dd} {HH}:{mm}"},
+        "axisLabel": {
+            "formatter": "{MM}-{dd} {HH}:{mm}",
+            "hideOverlap": True,
+            "interval": "auto",
+        },
     }
 
     if fixed_time_axis:
