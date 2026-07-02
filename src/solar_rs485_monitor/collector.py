@@ -35,10 +35,10 @@ from solar_rs485_monitor.sinks.thingspeak import (
     get_field_map as get_thingspeak_field_map,
     write_to_thingspeak,
 )
-from solar_rs485_monitor.alerts.telegram import (
-    get_telegram_config,
-    has_telegram_config,
-    write_to_telegram,
+from solar_rs485_monitor.alerts.dispatcher import (
+    get_alert_handler,
+    list_alert_handler_names,
+    parse_alert_channels,
 )
 from solar_rs485_monitor.version import get_version
 
@@ -154,46 +154,6 @@ def parse_collector_sinks(value: str) -> set[str]:
     return sinks
 
 
-def parse_alert_channels(value: str) -> set[str]:
-    channel_text = value.strip()
-
-    if not channel_text:
-        return set()
-
-    aliases = {
-        "telegram": "telegram",
-        "tg": "telegram",
-    }
-    requested = {
-        item.strip().lower().replace("-", "_")
-        for item in channel_text.split(",")
-        if item.strip()
-    }
-
-    if "all" in requested:
-        return {"all"}
-
-    channels = set()
-    invalid = []
-
-    for channel in requested:
-        canonical = aliases.get(channel)
-
-        if canonical is None:
-            invalid.append(channel)
-            continue
-
-        channels.add(canonical)
-
-    if invalid:
-        raise RuntimeError(
-            "Invalid ALERT_CHANNELS value(s): "
-            + ", ".join(sorted(invalid))
-        )
-
-    return channels
-
-
 def has_cli_sink_flags(args: argparse.Namespace) -> bool:
     return any(
         [
@@ -208,12 +168,7 @@ def has_cli_sink_flags(args: argparse.Namespace) -> bool:
 
 
 def has_cli_alert_flags(args: argparse.Namespace) -> bool:
-    return any(
-        [
-            args.telegram,
-            args.all_alerts,
-        ]
-    )
+    return any([args.telegram, args.all_alerts])
 
 
 def apply_sink_selection(args: argparse.Namespace) -> None:
@@ -243,7 +198,48 @@ def apply_alert_selection(args: argparse.Namespace) -> None:
         args.all_alerts = True
         return
 
-    args.telegram = "telegram" in channels
+    args.requested_alert_channels = channels
+
+
+def get_requested_alert_channels(args: argparse.Namespace) -> set[str]:
+    if args.all_alerts:
+        return set(list_alert_handler_names())
+
+    requested = set(getattr(args, "requested_alert_channels", set()))
+
+    # Legacy explicit CLI flag kept for backward compatibility.
+    if args.telegram:
+        requested.add("telegram")
+
+    return requested
+
+
+def summarize_alert_result(result: dict) -> dict:
+    summary: dict = {
+        "alert_skipped": bool(result.get("skipped", False)),
+    }
+
+    if "chat_ids" in result:
+        summary["alert_targets"] = len(result.get("chat_ids", []))
+
+    summary_result = result.get("summary")
+    if isinstance(summary_result, dict):
+        summary["summary_sent_count"] = len(summary_result.get("sent", []))
+        summary["summary_failed_count"] = len(summary_result.get("failed", []))
+
+    fault_event_result = result.get("fault_event")
+    if isinstance(fault_event_result, dict):
+        summary["fault_event_sent_count"] = len(fault_event_result.get("sent", []))
+        summary["fault_event_failed_count"] = len(fault_event_result.get("failed", []))
+
+    sent_result = result.get("sent")
+    failed_result = result.get("failed")
+    if isinstance(sent_result, list):
+        summary["sent_count"] = len(sent_result)
+    if isinstance(failed_result, list):
+        summary["failed_count"] = len(failed_result)
+
+    return summary
 
 
 def now_utc_iso() -> str:
@@ -614,8 +610,7 @@ def main() -> None:
         args.sqlite = True
         args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
 
-    if args.all_alerts:
-        args.telegram = has_telegram_config(get_telegram_config())
+    requested_alert_channels = get_requested_alert_channels(args)
 
     worksheet = None
     if args.google_sheet:
@@ -661,14 +656,24 @@ def main() -> None:
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
-    telegram_config = None
-    if args.telegram:
+    alert_configs: dict[str, dict] = {}
+    for channel in sorted(requested_alert_channels):
+        handler = get_alert_handler(channel)
+
         try:
-            telegram_config = get_telegram_config()
+            config = handler.get_config()
+
+            if args.all_alerts and not handler.has_config(config):
+                continue
+
+            if not handler.has_config(config):
+                raise RuntimeError(f"{channel} configuration is not set")
+
+            alert_configs[channel] = config
         except Exception as e:
             print_alert_error(
                 inverter_name=inverter_name,
-                alert="telegram",
+                alert=channel,
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -787,29 +792,24 @@ def main() -> None:
                         error=e,
                     )
 
-            if telegram_config is not None:
+            for channel, config in alert_configs.items():
                 try:
-                    telegram_result = write_to_telegram(
+                    handler = get_alert_handler(channel)
+                    alert_result = handler.send(
                         data=result,
-                        config=telegram_config,
+                        config=config,
                     )
-                    summary_result = telegram_result.get("summary") or {}
-                    fault_event_result = telegram_result.get("fault_event") or {}
-                    print_section_json("[Alert] Telegram", {
+
+                    print_section_json(f"[Alert] {channel.capitalize()}", {
                         **timestamp_fields(),
                         "inverter_name": inverter_name,
-                        "alert": "telegram",
-                        "telegram_chat_targets": len(telegram_result.get("chat_ids", [])),
-                        "telegram_summary_sent_count": len(summary_result.get("sent", [])),
-                        "telegram_summary_failed_count": len(summary_result.get("failed", [])),
-                        "telegram_fault_event_sent_count": len(fault_event_result.get("sent", [])),
-                        "telegram_fault_event_failed_count": len(fault_event_result.get("failed", [])),
-                        "telegram_skipped": bool(telegram_result.get("skipped", False)),
+                        "alert": channel,
+                        **summarize_alert_result(alert_result),
                     })
                 except Exception as e:
                     print_alert_error(
                         inverter_name=inverter_name,
-                        alert="telegram",
+                        alert=channel,
                         error=e,
                     )
 

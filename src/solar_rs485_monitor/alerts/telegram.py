@@ -4,6 +4,12 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from solar_rs485_monitor.alerts.message import (
+    build_fault_event_message,
+    build_summary_message,
+    parse_int_value,
+)
+
 
 def parse_chat_ids(chat_ids_text: str, single_chat_id: str) -> list[str]:
     chat_ids = []
@@ -61,85 +67,6 @@ def validate_telegram_config(config: dict) -> None:
 
     if not config.get("chat_ids"):
         raise RuntimeError("TELEGRAM_CHAT_ID or TELEGRAM_CHAT_IDS is not set")
-
-
-def build_summary_message(data: dict) -> str:
-    fault_code = parse_int_value(data.get("fault_code"), 0)
-    fault = parse_int_value(data.get("fault"), 0)
-    active_bits = format_active_bits(fault_code)
-
-    return "\n".join(
-        [
-            "*Solar RS485 Monitor*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Fault: `{fault}`",
-            f"Fault code: `{fault_code}`",
-            f"Active bits: `{active_bits}`",
-            "",
-            "*DC Input*",
-            f"- Voltage: `{data.get('input_dc_voltage_v', '-')}` V",
-            f"- Current: `{data.get('input_dc_current_a', '-')}` A",
-            f"- Power: `{data.get('input_dc_power_w', '-')}` W",
-            "",
-            "*AC Output*",
-            f"- Voltage: `{data.get('output_ac_voltage_v', '-')}` V",
-            f"- Current: `{data.get('output_ac_current_a', '-')}` A",
-            f"- Power: `{data.get('output_ac_power_w', '-')}` W",
-            f"- Power factor: `{data.get('output_ac_power_factor_pct', '-')}` %",
-            f"- Frequency: `{data.get('output_ac_frequency_hz', '-')}` Hz",
-            "",
-            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
-            f"Raw frame: `{data.get('raw_frame_hex', '-')}`",
-        ]
-    )
-
-
-def build_fault_event_message(data: dict) -> str:
-    fault_code = parse_int_value(data.get("fault_code"), 0)
-    fault = parse_int_value(data.get("fault"), 0)
-    active_bits = format_active_bits(fault_code)
-
-    return "\n".join(
-        [
-            "*Solar RS485 Fault Event*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Fault: `{fault}`",
-            f"Fault code: `{fault_code}`",
-            f"Active bits: `{active_bits}`",
-            "",
-            "*DC Input*",
-            f"- Voltage: `{data.get('input_dc_voltage_v', '-')}` V",
-            f"- Current: `{data.get('input_dc_current_a', '-')}` A",
-            f"- Power: `{data.get('input_dc_power_w', '-')}` W",
-            "",
-            "*AC Output*",
-            f"- Voltage: `{data.get('output_ac_voltage_v', '-')}` V",
-            f"- Current: `{data.get('output_ac_current_a', '-')}` A",
-            f"- Power: `{data.get('output_ac_power_w', '-')}` W",
-            f"- Power factor: `{data.get('output_ac_power_factor_pct', '-')}` %",
-            f"- Frequency: `{data.get('output_ac_frequency_hz', '-')}` Hz",
-            "",
-            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
-            f"Raw frame: `{data.get('raw_frame_hex', '-')}`",
-        ]
-    )
-
-
-def parse_int_value(value, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def format_active_bits(fault_code: int) -> str:
-    if fault_code <= 0:
-        return "-"
-
-    bits = [f"Bit {bit}" for bit in range(16) if fault_code & (1 << bit)]
-    return ", ".join(bits) if bits else "-"
 
 
 def send_telegram_message(config: dict, text: str, chat_id: str) -> dict:
@@ -241,3 +168,7 @@ def write_to_telegram(data: dict, config: dict) -> dict:
         "chat_ids": config.get("chat_ids", []),
         "skipped": False,
     }
+
+
+def send_alert(data: dict, config: dict) -> dict:
+    return write_to_telegram(data=data, config=config)

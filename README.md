@@ -6,6 +6,8 @@ The collector reads inverter data, prints the parsed result as JSON, and can opt
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
+Alert channels use a small dispatcher registry under `src/solar_rs485_monitor/alerts/dispatcher.py` with shared message builders in `src/solar_rs485_monitor/alerts/message.py`. To add a new channel (for example Slack), implement a channel module with `get_config`, `has_config`, and `send_alert`, then register it in the dispatcher.
+
 ## Sink Screenshots
 
 <table>
