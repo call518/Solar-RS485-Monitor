@@ -2640,9 +2640,27 @@ def run_app() -> None:
     if not require_dashboard_auth(st, auth_text):
         return
 
+    def get_query_param(name: str) -> str | None:
+        if not hasattr(st, "query_params"):
+            return None
+
+        raw = st.query_params.get(name)
+        if isinstance(raw, list):
+            raw = raw[0] if raw else None
+
+        if raw is None:
+            return None
+
+        value = str(raw).strip()
+        return value or None
+
     with st.sidebar:
         if "dashboard_lang" not in st.session_state:
             st.session_state["dashboard_lang"] = get_dashboard_language()
+
+        query_lang = get_query_param("lang")
+        if query_lang in {"ko", "en"}:
+            st.session_state["dashboard_lang"] = query_lang
 
         current_lang = st.session_state["dashboard_lang"]
         if current_lang not in {"ko", "en"}:
@@ -2659,6 +2677,8 @@ def run_app() -> None:
 
         if language_choice != current_lang:
             st.session_state["dashboard_lang"] = language_choice
+            if hasattr(st, "query_params"):
+                st.query_params["lang"] = language_choice
             st.rerun()
 
         lang = st.session_state["dashboard_lang"]
@@ -2672,23 +2692,47 @@ def run_app() -> None:
         # the default UI. Re-enable this selector if SQLite dashboard access is
         # needed again.
         # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
+        range_options = list(RANGES.keys())
+        query_range = get_query_param("range")
+        default_range_name = query_range if query_range in RANGES else "Today"
         range_name = st.selectbox(
             text["range"],
-            list(RANGES.keys()),
-            index=list(RANGES.keys()).index("Today"),
+            range_options,
+            index=range_options.index(default_range_name),
             format_func=lambda value: RANGE_LABELS[lang][value],
         )
+
+        query_bucket_seconds = get_query_param("bucket")
+        default_bucket_seconds = 600
+        if query_bucket_seconds is not None:
+            try:
+                parsed_bucket_seconds = int(query_bucket_seconds)
+            except ValueError:
+                parsed_bucket_seconds = 600
+            if parsed_bucket_seconds in BUCKET_SECONDS:
+                default_bucket_seconds = parsed_bucket_seconds
+
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],
             BUCKET_SECONDS,
-            index=BUCKET_SECONDS.index(600),
+            index=BUCKET_SECONDS.index(default_bucket_seconds),
             format_func=lambda value: BUCKET_LABELS[lang][value],
         )
+
+        query_limit = get_query_param("limit")
+        default_limit = 50000
+        if query_limit is not None:
+            try:
+                parsed_limit = int(query_limit)
+            except ValueError:
+                parsed_limit = default_limit
+            default_limit = min(300000, max(100, parsed_limit))
+
         limit = st.number_input(
             text["max_points"],
             min_value=100,
             max_value=300000,
-            value=50000,
+            value=default_limit,
             step=1000,
         )
         st.caption(
@@ -2697,19 +2741,45 @@ def run_app() -> None:
             )
         )
         default_refresh_seconds = get_dashboard_auto_refresh_seconds()
+        query_refresh_seconds = get_query_param("refresh")
+        if query_refresh_seconds is not None:
+            try:
+                parsed_refresh_seconds = int(query_refresh_seconds)
+            except ValueError:
+                parsed_refresh_seconds = default_refresh_seconds
+            if parsed_refresh_seconds in REFRESH_SECONDS:
+                default_refresh_seconds = parsed_refresh_seconds
+
         refresh_seconds = st.selectbox(
             text["auto_refresh"],
             REFRESH_SECONDS,
             index=REFRESH_SECONDS.index(default_refresh_seconds),
             format_func=lambda value: REFRESH_LABELS[lang][value],
         )
+
+        query_axis_mode = get_query_param("axis")
+        default_axis_mode = query_axis_mode if query_axis_mode in {"fixed", "auto"} else "fixed"
         axis_mode = st.selectbox(
             text["x_axis_mode"],
             ["fixed", "auto"],
-            index=0,
+            index=0 if default_axis_mode == "fixed" else 1,
             format_func=lambda value: text[f"x_axis_mode_{value}"],
         )
         fixed_time_axis = axis_mode == "fixed"
+
+        if hasattr(st, "query_params"):
+            desired_query_params = {
+                "lang": lang,
+                "range": range_name,
+                "bucket": str(bucket_seconds),
+                "limit": str(int(limit)),
+                "refresh": str(refresh_seconds),
+                "axis": axis_mode,
+            }
+            for key, value in desired_query_params.items():
+                if get_query_param(key) != value:
+                    st.query_params[key] = value
+
         render_dashboard_logout(st, text)
 
     if hasattr(st, "fragment"):
