@@ -1320,6 +1320,97 @@ def build_nonzero_metric_domain(values) -> list[float] | None:
     return [float(lower), float(upper)]
 
 
+def render_area_echart(
+    st,
+    chart_df,
+    metric_name: str,
+    metric_label: str,
+    since: datetime,
+    until: datetime,
+    fixed_time_axis: bool,
+) -> None:
+    from streamlit_echarts import st_echarts
+
+    chart_data = (
+        chart_df[[metric_name]]
+        .reset_index()
+        .rename(columns={metric_name: "value"})
+        .dropna(subset=["timestamp", "value"])
+    )
+
+    if chart_data.empty:
+        return
+
+    points = []
+    for _, row in chart_data.iterrows():
+        points.append([row["timestamp"].isoformat(), float(row["value"])])
+
+    domain = build_nonzero_metric_domain(chart_data["value"])
+    y_min = None
+    y_max = None
+    if domain is not None:
+        y_min, y_max = domain
+
+    x_axis = {
+        "type": "time",
+        "axisLabel": {
+            "formatter": "{MM}-{dd} {HH}:{mm}",
+            "hideOverlap": True,
+            "interval": "auto",
+        },
+    }
+
+    if fixed_time_axis:
+        x_axis["min"] = since.isoformat()
+        x_axis["max"] = until.isoformat()
+
+    color = AREA_CHART_COLORS.get(metric_name, "#3b82f6")
+    latest_timestamp = chart_data["timestamp"].max().isoformat()
+    latest_value = float(chart_data["value"].iloc[-1])
+    chart_key = (
+        f"echart_area_{metric_name}_"
+        f"{latest_timestamp}_"
+        f"{latest_value:.6f}_"
+        f"{len(chart_data)}"
+    )
+
+    options = {
+        "animation": False,
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "xAxis": x_axis,
+        "yAxis": {
+            "type": "value",
+            "name": metric_label,
+            "scale": True,
+            "min": y_min,
+            "max": y_max,
+        },
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {"type": "line"},
+        },
+        "series": [
+            {
+                "name": metric_label,
+                "type": "line",
+                "showSymbol": False,
+                "smooth": True,
+                "lineStyle": {"width": 2, "color": color},
+                "areaStyle": {"opacity": 0.18, "color": color},
+                "itemStyle": {"color": color},
+                "data": points,
+            }
+        ],
+    }
+
+    st_echarts(
+        options=options,
+        height="320px",
+        renderer="svg",
+        key=chart_key,
+    )
+
+
 def render_area_chart(
     st,
     chart_df,
@@ -1329,51 +1420,15 @@ def render_area_chart(
     until: datetime,
     fixed_time_axis: bool,
 ) -> None:
-    import altair as alt
-
-    color = AREA_CHART_COLORS.get(metric_name, "#3b82f6")
-    chart_data = (
-        chart_df[[metric_name]]
-        .reset_index()
-        .rename(columns={metric_name: "value"})
+    render_area_echart(
+        st=st,
+        chart_df=chart_df,
+        metric_name=metric_name,
+        metric_label=metric_label,
+        since=since,
+        until=until,
+        fixed_time_axis=fixed_time_axis,
     )
-
-    x_kwargs = {"title": None}
-    if fixed_time_axis:
-        x_kwargs["scale"] = alt.Scale(domain=[since, until])
-
-    base = alt.Chart(chart_data).encode(
-        x=alt.X(
-            "timestamp:T",
-            **x_kwargs,
-            axis=alt.Axis(format=TIME_AXIS_FORMAT),
-        ),
-        y=alt.Y(
-            "value:Q",
-            title=metric_label,
-            scale=alt.Scale(zero=False),
-        ),
-        tooltip=[
-            alt.Tooltip(
-                "timestamp:T",
-                title="timestamp",
-                format=TOOLTIP_TIMESTAMP_FORMAT,
-            ),
-            alt.Tooltip("value:Q", title=metric_name),
-        ],
-    )
-    area = base.mark_area(
-        color=color,
-        opacity=0.18,
-        interpolate="monotone",
-    )
-    line = base.mark_line(
-        color=color,
-        strokeWidth=2,
-        interpolate="monotone",
-    )
-
-    st.altair_chart(area + line, use_container_width=True)
 
 
 def render_total_generation_echart(
@@ -1473,14 +1528,18 @@ def render_bar_chart(
     until: datetime,
     fixed_time_axis: bool,
 ) -> None:
-    import altair as alt
+    from streamlit_echarts import st_echarts
 
     color = BAR_CHART_COLORS.get(metric_name, "#16a34a")
     chart_data = (
         chart_df[[metric_name]]
         .reset_index()
         .rename(columns={metric_name: "value"})
+        .dropna(subset=["timestamp", "value"])
     )
+
+    if chart_data.empty:
+        return
 
     if metric_name == "total_generation_kwh":
         render_total_generation_echart(
@@ -1493,53 +1552,74 @@ def render_bar_chart(
         )
         return
 
-    if metric_name == "fault":
-        y_encoding = alt.Y(
-            "value:Q",
-            title=metric_label,
-            scale=alt.Scale(domain=[0, 1], nice=False),
-            axis=alt.Axis(values=[0, 1], format="d"),
-        )
-    elif metric_name == "total_generation_kwh":
-        domain = build_nonzero_metric_domain(chart_data["value"])
-        if domain is None:
-            y_encoding = alt.Y("value:Q", title=metric_label)
-        else:
-            y_encoding = alt.Y(
-                "value:Q",
-                title=metric_label,
-                scale=alt.Scale(domain=domain, zero=False, nice=False),
-                axis=alt.Axis(format=".0f"),
-            )
-    else:
-        y_encoding = alt.Y("value:Q", title=metric_label)
+    points = []
+    for _, row in chart_data.iterrows():
+        points.append([row["timestamp"].isoformat(), float(row["value"])])
 
-    x_kwargs = {"title": None}
+    x_axis = {
+        "type": "time",
+        "axisLabel": {
+            "formatter": "{MM}-{dd} {HH}:{mm}",
+            "hideOverlap": True,
+            "interval": "auto",
+        },
+    }
+
     if fixed_time_axis:
-        x_kwargs["scale"] = alt.Scale(domain=[since, until])
+        x_axis["min"] = since.isoformat()
+        x_axis["max"] = until.isoformat()
 
-    chart = (
-        alt.Chart(chart_data)
-        .mark_bar(color=color)
-        .encode(
-            x=alt.X(
-                "timestamp:T",
-                **x_kwargs,
-                axis=alt.Axis(format=TIME_AXIS_FORMAT),
-            ),
-            y=y_encoding,
-            tooltip=[
-                alt.Tooltip(
-                    "timestamp:T",
-                    title="timestamp",
-                    format=TOOLTIP_TIMESTAMP_FORMAT,
-                ),
-                alt.Tooltip("value:Q", title=metric_name),
-            ],
-        )
+    y_axis = {
+        "type": "value",
+        "name": metric_label,
+        "scale": True,
+    }
+
+    if metric_name == "fault":
+        y_axis["min"] = 0
+        y_axis["max"] = 1
+        y_axis["minInterval"] = 1
+        y_axis["axisLabel"] = {"formatter": "{value}"}
+    elif metric_name == "fault_code":
+        y_axis["min"] = 0
+        y_axis["minInterval"] = 1
+        y_axis["axisLabel"] = {"formatter": "{value}"}
+
+    latest_timestamp = chart_data["timestamp"].max().isoformat()
+    latest_value = float(chart_data["value"].iloc[-1])
+    chart_key = (
+        f"echart_bar_{metric_name}_"
+        f"{latest_timestamp}_"
+        f"{latest_value:.6f}_"
+        f"{len(chart_data)}"
     )
 
-    st.altair_chart(chart, use_container_width=True)
+    options = {
+        "animation": False,
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "xAxis": x_axis,
+        "yAxis": y_axis,
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {"type": "shadow"},
+        },
+        "series": [
+            {
+                "name": metric_label,
+                "type": "bar",
+                "barMaxWidth": 18,
+                "itemStyle": {"color": color},
+                "data": points,
+            }
+        ],
+    }
+
+    st_echarts(
+        options=options,
+        height="320px",
+        renderer="svg",
+        key=chart_key,
+    )
 
 
 def validate_bucket_seconds(bucket_seconds: int) -> int:
