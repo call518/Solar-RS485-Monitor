@@ -1708,7 +1708,6 @@ def render_area_echart(
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
-            "name": metric_label,
             "scale": True,
             "min": y_min,
             "max": y_max,
@@ -1817,7 +1816,6 @@ def render_total_generation_echart(
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
-            "name": metric_label,
             "scale": True,
             "min": y_min,
             "max": y_max,
@@ -1899,7 +1897,6 @@ def render_bar_chart(
 
     y_axis = {
         "type": "value",
-        "name": metric_label,
         "scale": True,
     }
 
@@ -2354,7 +2351,6 @@ def render_daily_generation_chart(
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
-            "name": title,
             "scale": True,
             "min": 0,
         },
