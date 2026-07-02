@@ -55,7 +55,7 @@ METRICS = {
     "output_ac_frequency_hz": "AC output frequency (Hz)",
     "total_generation_kwh": "Total generation (kWh)",
     "fault_code": "Fault code",
-    "fault": "Fault (0/1)",
+    "fault": "Fault",
 }
 
 METRIC_LABELS = {
@@ -70,7 +70,7 @@ METRIC_LABELS = {
         "output_ac_frequency_hz": "AC 출력 주파수 (Hz)",
         "total_generation_kwh": "누적 발전량 (kWh)",
         "fault_code": "점검 코드",
-        "fault": "점검 (0/1)",
+        "fault": "점검",
     },
     "en": METRICS,
 }
