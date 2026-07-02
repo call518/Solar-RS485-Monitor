@@ -62,7 +62,6 @@ When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inv
 | AC output | `output_ac_frequency_hz` | Grid-side AC output frequency |
 | Generation | `total_generation_kwh` | Total accumulated generation |
 | Status | `fault_code` | Raw inverter fault code |
-| Status | `fault` | Numeric fault status derived from `fault_code` |
 | Debug | `raw_frame_hex` | Raw response frame for troubleshooting |
 
 The same parsed record can be printed as JSON and optionally written to SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch. Telegram is used as an alert channel for fault events.
@@ -165,7 +164,6 @@ General settings:
 ```env
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_LANGUAGE="Korean"
-DASHBOARD_STANDBY_POWER_W_THRESHOLD="20"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"
 DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
@@ -187,7 +185,7 @@ ALERT_CHANNELS="telegram"
 
 `DASHBOARD_LANGUAGE` sets the default dashboard UI language at startup. It is case-insensitive and accepts `English` or `Korean`. Users can still change language from the sidebar after loading.
 
-`DASHBOARD_STANDBY_POWER_W_THRESHOLD` controls when the top status badge is shown as `STANDBY`. If the latest AC output power is less than or equal to this threshold, the dashboard treats it as standby to reduce night-time fault confusion.
+The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to determine `STANDBY`. Fault detection is based on Bit 1+; if any Bit 1+ is active, the badge shows `FAULT`. Otherwise, it shows `STANDBY` when Bit 0 is `1`, and `NORMAL` when Bit 0 is `0`.
 
 `DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `10`, `30`, `60`, `120`, `300`, and `600`. A value between `1` and `9` is clamped to `10` for safety.
 
@@ -502,7 +500,7 @@ TELEGRAM_SEND_FAULT_EVENT="true"
 
 If multiple targets are configured, the alert attempts delivery to all of them. A failed target does not stop delivery to other targets.
 
-By default, the alert channel skips normal measurements and sends messages only when a fault event is detected (`fault=1` or `fault_code != 0`). The fault event message includes key measurement values and active fault bits. Set `TELEGRAM_SEND_SUMMARY="true"` if you also want a summary message on each detected event.
+By default, the alert channel skips normal measurements and sends messages only when a fault event is detected (excluding Bit 0, and triggered when any Bit 1+ is active). The fault event message includes key measurement values and active fault bits. Set `TELEGRAM_SEND_SUMMARY="true"` if you also want a summary message on each detected event.
 
 ## Dashboard
 
@@ -646,11 +644,10 @@ CREATE TABLE IF NOT EXISTS inverter_log (
     output_ac_frequency_hz     FLOAT(5,2) COMMENT 'AC output frequency (Hz)',
     total_generation_kwh FLOAT(10,3) COMMENT 'Total generation (kWh)',
     fault_code           SMALLINT UNSIGNED DEFAULT 0 COMMENT 'Fault code',
-    fault                TINYINT(1) DEFAULT 0 COMMENT 'Fault status (0/1)',
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'DB insert time',
     INDEX idx_timestamp (timestamp),
     INDEX idx_inverter_id (inverter_id),
-    INDEX idx_fault (fault)
+    INDEX idx_fault_code (fault_code)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COMMENT='solar-rs485-monitor inverter log';
@@ -702,7 +699,6 @@ CREATE TABLE IF NOT EXISTS inverter_log (
     output_ac_frequency_hz REAL,
     total_generation_kwh REAL,
     fault_code INTEGER DEFAULT 0,
-    fault INTEGER DEFAULT 0,
     raw_frame_hex TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -773,8 +769,45 @@ For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data
 | `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
 | `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
 | `fault_code` | data 24-25 | 1 | code | Raw fault code |
-| `fault` | derived from `fault_code` | N/A | 0/1 | `1` when any fault bit (Bit 1-12) is set, otherwise `0` |
 | `raw_frame_hex` | full frame | N/A | hex bytes | Raw response frame for debugging |
+
+### fault_code Bit Mapping
+
+`fault_code` is the decimal representation of a 2-byte unsigned fault bitmask.
+
+One response can contain more than one active fault at the same time. In other
+words, this is not a single enum value; it is a bitmask where multiple bits can
+be `1` in a single `fault_code`.
+
+Simple rules:
+
+- If only one bit is active, `fault_code` equals that bit value.
+- If multiple bits are active, `fault_code` is the sum of active bit values.
+
+| Bit | Mask (hex) | Value (decimal, single-bit) | Meaning (when `1`) |
+| ---: | ---: | ---: | --- |
+| 0 | `0x0001` | 1 | Inverter not operating |
+| 1 | `0x0002` | 2 | PV over-voltage |
+| 2 | `0x0004` | 4 | PV under-voltage |
+| 3 | `0x0008` | 8 | PV over-current |
+| 4 | `0x0010` | 16 | Inverter IGBT error |
+| 5 | `0x0020` | 32 | Inverter over-temperature |
+| 6 | `0x0040` | 64 | Grid over-voltage |
+| 7 | `0x0080` | 128 | Grid under-voltage |
+| 8 | `0x0100` | 256 | Grid over-current |
+| 9 | `0x0200` | 512 | Grid over-frequency |
+| 10 | `0x0400` | 1024 | Grid under-frequency |
+| 11 | `0x0800` | 2048 | Islanding / blackout |
+| 12 | `0x1000` | 4096 | Ground fault (leakage) |
+
+Simple examples:
+
+- Single active fault: `fault_code = 2` means Bit 1 only (PV over-voltage)
+- Multiple active faults: `fault_code = 72` means Bit 3 + Bit 6
+  (`8 + 64` = PV over-current + Grid over-voltage)
+
+Bit 0 is the operation-state bit: `1` means not operating, `0` means operating.
+Fault-event detection uses Bit 1+.
 
 Successful reads include fields such as:
 
@@ -793,7 +826,6 @@ Successful reads include fields such as:
   "output_ac_frequency_hz": 60.0,
   "total_generation_kwh": 112.244,
   "fault_code": 0,
-  "fault": 0,
   "raw_frame_hex": "7e 01 02 00 1a 00 c1 00 00 00 36 00 e5 00 00 00 25 03 52 02 58 00 00 00 00 00 01 b6 74 00 00 7c 21"
 }
 ```

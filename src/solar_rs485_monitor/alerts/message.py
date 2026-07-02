@@ -5,6 +5,11 @@ def parse_int_value(value, default: int = 0) -> int:
         return default
 
 
+def has_fault_event(fault_code: int) -> bool:
+    # Bit 0 is operation/standby state and is not treated as a fault event.
+    return (fault_code & 0xFFFE) != 0
+
+
 def format_active_bits(fault_code: int) -> str:
     if fault_code <= 0:
         return "-"
@@ -15,7 +20,7 @@ def format_active_bits(fault_code: int) -> str:
 
 def build_summary_message(data: dict) -> str:
     fault_code = parse_int_value(data.get("fault_code"), 0)
-    fault = parse_int_value(data.get("fault"), 0)
+    fault = 1 if has_fault_event(fault_code) else 0
     active_bits = format_active_bits(fault_code)
 
     return "\n".join(
@@ -47,7 +52,7 @@ def build_summary_message(data: dict) -> str:
 
 def build_fault_event_message(data: dict) -> str:
     fault_code = parse_int_value(data.get("fault_code"), 0)
-    fault = parse_int_value(data.get("fault"), 0)
+    fault = 1 if has_fault_event(fault_code) else 0
     active_bits = format_active_bits(fault_code)
 
     return "\n".join(

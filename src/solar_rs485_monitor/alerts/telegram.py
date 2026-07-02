@@ -11,6 +11,9 @@ from solar_rs485_monitor.alerts.message import (
 )
 
 
+FAULT_EVENT_MASK = 0xFFFE
+
+
 def parse_chat_ids(chat_ids_text: str, single_chat_id: str) -> list[str]:
     chat_ids = []
 
@@ -144,9 +147,8 @@ def write_to_telegram(data: dict, config: dict) -> dict:
     sent_summary = {"sent": [], "failed": []}
     sent_event = {"sent": [], "failed": []}
 
-    fault = parse_int_value(data.get("fault"), 0)
     fault_code = parse_int_value(data.get("fault_code"), 0)
-    is_fault_event = (fault == 1) or (fault_code != 0)
+    is_fault_event = (fault_code & FAULT_EVENT_MASK) != 0
 
     if not is_fault_event:
         return {

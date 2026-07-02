@@ -20,7 +20,6 @@ SHEET_HEADERS = [
     "output_ac_frequency_hz",
     "total_generation_kwh",
     "fault_code",
-    "fault",
 ]
 
 _google_client = None
@@ -184,5 +183,4 @@ def write_to_google_sheet(worksheet, data: dict) -> None:
         data["output_ac_frequency_hz"],
         data["total_generation_kwh"],
         data["fault_code"],
-        data["fault"],
     ])

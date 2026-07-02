@@ -33,8 +33,6 @@ DASHBOARD_AUTO_REFRESH_SECONDS="60"
 # Default dashboard language at startup. Supported (case-insensitive):
 # English, Korean
 DASHBOARD_LANGUAGE="English"
-# Top status shows STANDBY when latest AC output power is <= this threshold.
-DASHBOARD_STANDBY_POWER_W_THRESHOLD="20"
 
 # Optional dashboard login. Generate password hashes with:
 # solar-rs485-monitor-dashboard --hash-password

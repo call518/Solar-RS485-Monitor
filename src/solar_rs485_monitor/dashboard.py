@@ -32,7 +32,6 @@ from solar_rs485_monitor.version import get_version
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
-DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD = 20.0
 DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
@@ -55,7 +54,6 @@ METRICS = {
     "output_ac_frequency_hz": "AC output frequency (Hz)",
     "total_generation_kwh": "Total generation (kWh)",
     "fault_code": "Fault code",
-    "fault": "Fault",
 }
 
 METRIC_LABELS = {
@@ -70,7 +68,6 @@ METRIC_LABELS = {
         "output_ac_frequency_hz": "AC 출력 주파수 (Hz)",
         "total_generation_kwh": "누적 발전량 (kWh)",
         "fault_code": "점검 코드",
-        "fault": "점검",
     },
     "en": METRICS,
 }
@@ -106,7 +103,6 @@ UI_TEXT = {
         "latest": "최신 시각",
         "ac_output_w": "AC 출력 (W)",
         "status": "상태",
-        "fault": "점검",
         "fault_normal": "정상",
         "fault_fault": "장애",
         "fault_standby": "대기",
@@ -116,7 +112,7 @@ UI_TEXT = {
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
-        "fault_events_caption": "선택한 범위에서 고장 비트(Bit 1~12)가 활성화된 최신 이벤트입니다.",
+        "fault_events_caption": "선택한 범위에서 fault_code가 0이 아닌 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
         "active_bits": "활성 비트",
         "fault_code_label": "점검 코드 설명",
@@ -152,7 +148,6 @@ UI_TEXT = {
         "latest": "Latest",
         "ac_output_w": "AC Output (W)",
         "status": "Status",
-        "fault": "Fault",
         "fault_normal": "NORMAL",
         "fault_fault": "FAULT",
         "fault_standby": "STANDBY",
@@ -162,7 +157,7 @@ UI_TEXT = {
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
         "fault_events": "Fault Events (Recent 200)",
-        "fault_events_caption": "Latest events where fault bits (Bit 1-12) are active within the selected range.",
+        "fault_events_caption": "Latest events where fault_code is non-zero within the selected range.",
         "fault_events_empty": "No fault events in the selected range.",
         "active_bits": "Active bits",
         "fault_code_label": "Fault code detail",
@@ -250,13 +245,13 @@ TOOLTIP_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 TABLE_LABELS = {
     "ko": {
-        "timestamp": "시각 (UTC)",
+        "timestamp": "시각 (Local)",
         "inverter_name": "인버터 이름",
         "inverter_id": "인버터 ID",
         **METRIC_LABELS["ko"],
     },
     "en": {
-        "timestamp": "Timestamp (UTC)",
+        "timestamp": "Timestamp (Local)",
         "inverter_name": "Inverter name",
         "inverter_id": "Inverter ID",
         **METRIC_LABELS["en"],
@@ -273,12 +268,11 @@ CHART_GROUPS = [
     ["input_dc_voltage_v", "output_ac_voltage_v"],
     ["input_dc_current_a", "output_ac_current_a"],
     ["output_ac_power_factor_pct", "output_ac_frequency_hz"],
-    ["fault", "fault_code"],
+    ["fault_code"],
 ]
 
 BAR_CHART_COLORS = {
     "total_generation_kwh": "#16a34a",
-    "fault": "#dc2626",
     "fault_code": "#be185d",
 }
 
@@ -309,28 +303,29 @@ RANGES = {
 MAX_AGGREGATE_METRICS = {
     "total_generation_kwh",
     "fault_code",
-    "fault",
 }
 
 FAULT_OPERATION_STOP_BIT = 0
-# Bit 1-12 are fault bits from the inverter remote monitoring status table.
-FAULT_STATUS_MASK = 0x1FFE
+FAULT_EVENT_MASK = 0xFFFE
 
 FAULT_BIT_LABELS_KO = {
-    0: "Bit 0 인버터 동작유무(미작동)",
-    1: "Bit 1 태양전지 과전압",
-    2: "Bit 2 태양전지 저전압",
-    3: "Bit 3 태양전지 과전류",
-    4: "Bit 4 인버터 IGBT 에러",
-    5: "Bit 5 인버터 과온",
-    6: "Bit 6 계통 과전압",
-    7: "Bit 7 계통 저전압",
-    8: "Bit 8 계통 과전류",
-    9: "Bit 9 계통 과주파수",
-    10: "Bit 10 계통 저주파수",
-    11: "Bit 11 단독운전(정전)",
-    12: "Bit 12 지락(누전)",
+    0: "인버터 미작동",
+    1: "태양전지 과전압",
+    2: "태양전지 저전압",
+    3: "태양전지 과전류",
+    4: "인버터 IGBT 에러",
+    5: "인버터 과온",
+    6: "계통 과전압",
+    7: "계통 저전압",
+    8: "계통 과전류",
+    9: "계통 과주파수",
+    10: "계통 저주파수",
+    11: "단독운전(정전)",
+    12: "지락(누전)",
 }
+
+FAULT_EVENT_BITS = tuple(bit for bit in range(1, 16))
+FAULT_ALL_BITS = tuple(bit for bit in range(0, 16))
 
 
 def get_config_path() -> Path | None:
@@ -384,20 +379,6 @@ def get_dashboard_language() -> str:
     return DEFAULT_DASHBOARD_LANGUAGE
 
 
-def get_dashboard_standby_power_w_threshold() -> float:
-    raw = os.getenv(
-        "DASHBOARD_STANDBY_POWER_W_THRESHOLD",
-        str(DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD),
-    ).strip()
-
-    try:
-        value = float(raw)
-    except ValueError:
-        return DEFAULT_DASHBOARD_STANDBY_POWER_W_THRESHOLD
-
-    return max(0.0, value)
-
-
 def get_dashboard_auto_refresh_seconds() -> int:
     raw = os.getenv(
         "DASHBOARD_AUTO_REFRESH_SECONDS",
@@ -426,7 +407,7 @@ def is_operation_stopped(fault_code: int) -> bool:
 
 
 def has_fault_condition(fault_code: int) -> bool:
-    return bool(fault_code & FAULT_STATUS_MASK)
+    return bool(fault_code & FAULT_EVENT_MASK)
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
@@ -447,6 +428,40 @@ def get_fault_code_label(fault_code: int) -> str | None:
         return None
 
     return ", ".join(labels)
+
+
+def get_fault_labels(fault_code: int, bits: tuple[int, ...]) -> str | None:
+    labels = []
+
+    for bit in bits:
+        if not (fault_code & (1 << bit)):
+            continue
+
+        label = FAULT_BIT_LABELS_KO.get(bit)
+        if label:
+            labels.append(label)
+
+    if not labels:
+        return None
+
+    return ", ".join(labels)
+
+
+def get_fault_event_rows(fault_code: int, bits: tuple[int, ...]) -> list[str]:
+    rows = []
+
+    for bit in bits:
+        if not (fault_code & (1 << bit)):
+            continue
+
+        label = FAULT_BIT_LABELS_KO.get(bit, f"알 수 없는 비트 {bit}")
+
+        mask_value = 1 << bit
+        rows.append(
+            f"bit{bit} | 0x{mask_value:04X} | {mask_value} | {label}"
+        )
+
+    return rows
 
 
 def format_active_bits(fault_code: int) -> str:
@@ -803,7 +818,6 @@ def merge_mode_fault_code(df, mode_df):
 
     if "fault_code" in merged.columns:
         merged["fault_code"] = merged["fault_code"].fillna(0).round().astype(int)
-        merged["fault"] = ((merged["fault_code"] & FAULT_STATUS_MASK) != 0).astype(int)
 
     return merged
 
@@ -946,7 +960,7 @@ def read_sqlite_fault_events(
         "SELECT timestamp, inverter_name, inverter_id, fault_code "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
-        f"AND (CAST(\"fault_code\" AS INTEGER) & {FAULT_STATUS_MASK}) != 0 "
+        "AND CAST(\"fault_code\" AS INTEGER) != 0 "
         "ORDER BY timestamp DESC LIMIT ?"
     )
 
@@ -974,7 +988,7 @@ def read_mariadb_fault_events(
         "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code` "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
-        f"AND (CAST(`fault_code` AS SIGNED) & {FAULT_STATUS_MASK}) != 0 "
+        "AND CAST(`fault_code` AS SIGNED) != 0 "
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
 
@@ -1000,25 +1014,49 @@ def read_mariadb_fault_events(
     return normalize_dataframe(df)
 
 
-def format_table_header(column: str, lang: str) -> str:
-    label = TABLE_LABELS[lang].get(column, column)
-    return (
-        f"<th><strong>{html.escape(label)}</strong>"
-        f"<br><span>({html.escape(column)})</span></th>"
+def format_table_header(label: str) -> str:
+    return f"<th><strong>{html.escape(label)}</strong></th>"
+
+
+def format_table_timestamp(value, display_timezone: ZoneInfo) -> str:
+    try:
+        if hasattr(value, "to_pydatetime"):
+            value = value.to_pydatetime()
+
+        if not isinstance(value, datetime):
+            value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+
+        return value.astimezone(display_timezone).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(value)
+
+
+def render_data_table(
+    df,
+    columns: list[str],
+    header_labels: dict[str, str],
+    display_timezone: ZoneInfo,
+) -> str:
+    display_df = df[columns].head(200).copy()
+
+    if "timestamp" in display_df.columns:
+        display_df["timestamp"] = display_df["timestamp"].map(
+            lambda value: format_table_timestamp(value, display_timezone)
+        )
+
+    header = "".join(
+        format_table_header(header_labels.get(column, column))
+        for column in columns
     )
-
-
-def render_latest_rows_table(df, columns: list[str], lang: str) -> str:
-    display_df = df.sort_values("timestamp", ascending=False)[columns].head(200)
-    header = "".join(format_table_header(column, lang) for column in columns)
     rows = []
 
     for _, row in display_df.iterrows():
         cells = []
         for column in columns:
             value = row[column]
-            if hasattr(value, "isoformat"):
-                value = value.isoformat(sep=" ")
             cells.append(f"<td>{html.escape(str(value))}</td>")
         rows.append(f"<tr>{''.join(cells)}</tr>")
 
@@ -1042,11 +1080,8 @@ def render_latest_rows_table(df, columns: list[str], lang: str) -> str:
         padding: 0.5rem;
         text-align: left;
         white-space: nowrap;
-      }}
-      table th span {{
-        color: #6b7280;
-        font-size: 0.75rem;
-        font-weight: 400;
+                color: #111827;
+                font-weight: 700;
       }}
       table td {{
         border-bottom: 1px solid #e5e7eb;
@@ -1189,7 +1224,7 @@ def format_snapshot_value(metric_name: str, value) -> str:
     except (TypeError, ValueError):
         return str(value)
 
-    if metric_name in {"fault", "fault_code", "inverter_id"}:
+    if metric_name in {"fault_code", "inverter_id"}:
         return str(int(round(numeric)))
 
     if metric_name == "total_generation_kwh":
@@ -1218,7 +1253,6 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
         "output_ac_power_factor_pct",
         "output_ac_frequency_hz",
         "fault_code",
-        "fault",
     ]
     items = []
 
@@ -1591,12 +1625,7 @@ def render_bar_chart(
         "scale": True,
     }
 
-    if metric_name == "fault":
-        y_axis["min"] = 0
-        y_axis["max"] = 1
-        y_axis["minInterval"] = 1
-        y_axis["axisLabel"] = {"formatter": "{value}"}
-    elif metric_name == "fault_code":
+    if metric_name == "fault_code":
         y_axis["min"] = 0
         y_axis["minInterval"] = 1
         y_axis["axisLabel"] = {"formatter": "{value}"}
@@ -1808,6 +1837,8 @@ def render_fault_events_table(
     st,
     fault_events_df,
     text: dict[str, str],
+    lang: str,
+    display_timezone: ZoneInfo,
 ) -> None:
     import pandas as pd
 
@@ -1828,17 +1859,31 @@ def render_fault_events_table(
         lambda code: get_fault_code_label(int(code)) or f"FAULT CODE {int(code)}"
     )
 
-    st.dataframe(
-        display_df[[
-            "timestamp",
-            "inverter_name",
-            "inverter_id",
-            "fault_code",
-            text["active_bits"],
-            text["fault_code_label"],
-        ]],
-        use_container_width=True,
-        hide_index=True,
+    columns = [
+        "timestamp",
+        "inverter_name",
+        "inverter_id",
+        "fault_code",
+        text["active_bits"],
+        text["fault_code_label"],
+    ]
+    header_labels = {
+        "timestamp": TABLE_LABELS[lang]["timestamp"],
+        "inverter_name": TABLE_LABELS[lang]["inverter_name"],
+        "inverter_id": TABLE_LABELS[lang]["inverter_id"],
+        "fault_code": TABLE_LABELS[lang]["fault_code"],
+        text["active_bits"]: text["active_bits"],
+        text["fault_code_label"]: text["fault_code_label"],
+    }
+
+    st.markdown(
+        render_data_table(
+            display_df.sort_values("timestamp", ascending=False),
+            columns,
+            header_labels,
+            display_timezone,
+        ),
+        unsafe_allow_html=True,
     )
 
 
@@ -1884,38 +1929,41 @@ def render_dashboard_body(
     inverter_name = latest.get("inverter_name", "")
     inverter_id = int(latest.get("inverter_id", 0))
     try:
-        output_ac_power_w = float(latest.get("output_ac_power_w", 0.0))
-    except (TypeError, ValueError):
-        output_ac_power_w = 0.0
-
-    standby_threshold_w = get_dashboard_standby_power_w_threshold()
-    is_standby = output_ac_power_w <= standby_threshold_w
-
-    try:
         fault_code = int(latest.get("fault_code", 0))
     except (TypeError, ValueError):
         fault_code = 0
 
     operation_stopped = is_operation_stopped(fault_code)
-    fault = 1 if has_fault_condition(fault_code) else 0
+    has_fault = has_fault_condition(fault_code)
 
-    if fault:
+    if has_fault:
         fault_label = text["fault_fault"]
         fault_color = "#dc2626"
         fault_bg = "#fee2e2"
-        fault_badge_text = f"{fault_label} ({fault})"
-    elif is_standby or operation_stopped:
+    elif operation_stopped:
         fault_label = text["fault_standby"]
         fault_color = "#475569"
         fault_bg = "#e2e8f0"
-        fault_badge_text = fault_label
     else:
         fault_label = text["fault_normal"]
         fault_color = "#16a34a"
         fault_bg = "#dcfce7"
-        fault_badge_text = f"{fault_label} ({fault})"
 
-    fault_code_label = get_fault_code_label(fault_code)
+    fault_badge_text = f"{fault_label} ({fault_code})"
+
+    operation_label = FAULT_BIT_LABELS_KO.get(FAULT_OPERATION_STOP_BIT)
+    fault_event_labels = get_fault_labels(fault_code, FAULT_EVENT_BITS)
+
+    if fault_code != 0:
+        detail_rows = get_fault_event_rows(fault_code, FAULT_ALL_BITS)
+        if detail_rows:
+            detail_text = "\n".join(detail_rows)
+        else:
+            detail_text = fault_event_labels or f"FAULT CODE {fault_code}"
+        fault_code_detail = detail_text
+    else:
+        detail_text = text["fault_normal"]
+        fault_code_detail = detail_text
 
     st.markdown(
         f"""
@@ -1944,22 +1992,22 @@ def render_dashboard_body(
         <div style="font-size: 0.875rem; margin-bottom: 0.25rem;">{text["status"]}</div>
         <div style="
             display: inline-flex;
-            align-items: center;
-            padding: 0.35rem 0.65rem;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.2rem;
+            padding: 0.45rem 0.7rem;
             border-radius: 0.4rem;
             color: {fault_color};
             background: {fault_bg};
             border: 1px solid {fault_color};
             font-weight: 700;
             letter-spacing: 0.02em;
-        ">{fault_badge_text}</div>
-        {
-            (
-                f'<div style="margin-top:0.45rem; font-size:0.95rem; color:#991b1b; font-weight:600;">{html.escape(fault_code_label or f"FAULT CODE {fault_code}")}</div>'
-                if fault
-                else ""
-            )
-        }
+            min-width: 22rem;
+            max-width: 100%;
+        ">
+            <div>{fault_badge_text}</div>
+            <div style="font-size:0.74rem; font-weight:600; white-space:pre-line; overflow-wrap:anywhere; max-width:40rem; opacity:0.95;">{html.escape(fault_code_detail)}</div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -2035,7 +2083,7 @@ def render_dashboard_body(
     except Exception as e:
         st.warning(str(e))
     else:
-        render_fault_events_table(st, fault_events_df, text)
+        render_fault_events_table(st, fault_events_df, text, lang, display_timezone)
 
     st.subheader(text["latest_rows"])
     display_columns = [
@@ -2050,7 +2098,12 @@ def render_dashboard_body(
         ],
     ]
     st.markdown(
-        render_latest_rows_table(df, display_columns, lang),
+        render_data_table(
+            df.sort_values("timestamp", ascending=False),
+            display_columns,
+            {column: TABLE_LABELS[lang].get(column, column) for column in display_columns},
+            display_timezone,
+        ),
         unsafe_allow_html=True,
     )
 

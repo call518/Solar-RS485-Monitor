@@ -45,8 +45,6 @@ from solar_rs485_monitor.version import get_version
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 MIN_COLLECT_INTERVAL_SECONDS = 10.0
-# Fault status bit mask from remote monitoring table (Bit 1-12).
-FAULT_STATUS_MASK = 0x1FFE
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -415,7 +413,6 @@ def parse_frame(
         "output_ac_frequency_hz": u16(data, 14) / 10.0,
         "total_generation_kwh": u64(data, 16) / 1000.0,
         "fault_code": fault_code,
-        "fault": 1 if (fault_code & FAULT_STATUS_MASK) != 0 else 0,
         "raw_frame_hex": frame.hex(" "),
     }
 

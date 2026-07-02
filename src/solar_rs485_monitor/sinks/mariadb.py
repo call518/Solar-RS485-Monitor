@@ -17,7 +17,6 @@ INSERT_COLUMNS = [
     "output_ac_frequency_hz",
     "total_generation_kwh",
     "fault_code",
-    "fault",
 ]
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -86,7 +85,6 @@ def build_row(data: dict) -> list:
         "output_ac_frequency_hz": data["output_ac_frequency_hz"],
         "total_generation_kwh": data["total_generation_kwh"],
         "fault_code": data["fault_code"],
-        "fault": int(data["fault"]),
     }
 
     return [values[column] for column in INSERT_COLUMNS]

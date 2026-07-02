@@ -19,7 +19,6 @@ INSERT_COLUMNS = [
     "output_ac_frequency_hz",
     "total_generation_kwh",
     "fault_code",
-    "fault",
     "raw_frame_hex",
 ]
 
@@ -71,7 +70,6 @@ def build_row(data: dict) -> list:
         "output_ac_frequency_hz": data["output_ac_frequency_hz"],
         "total_generation_kwh": data["total_generation_kwh"],
         "fault_code": data["fault_code"],
-        "fault": int(data["fault"]),
         "raw_frame_hex": data["raw_frame_hex"],
     }
 
@@ -95,7 +93,6 @@ def ensure_sqlite_table(connection: sqlite3.Connection, table: str) -> None:
             output_ac_frequency_hz REAL,
             total_generation_kwh REAL,
             fault_code INTEGER DEFAULT 0,
-            fault INTEGER DEFAULT 0,
             raw_frame_hex TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -110,8 +107,8 @@ def ensure_sqlite_table(connection: sqlite3.Connection, table: str) -> None:
         f'ON "{table}" (inverter_id)'
     )
     connection.execute(
-        f'CREATE INDEX IF NOT EXISTS "idx_{table}_fault" '
-        f'ON "{table}" (fault)'
+        f'CREATE INDEX IF NOT EXISTS "idx_{table}_fault_code" '
+        f'ON "{table}" (fault_code)'
     )
 
 
