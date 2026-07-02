@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
@@ -39,9 +40,11 @@ DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
 DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY = "solar_rs485_monitor_dashboard_auth_expires_at"
 DASHBOARD_AUTH_SESSION_EXPIRED_KEY = "solar_rs485_monitor_dashboard_auth_expired"
 DASHBOARD_AUTH_COOKIE_NAME = "solar_rs485_monitor_dashboard_auth"
+DASHBOARD_AUTH_PROOF_COOKIE_NAME = "solar_rs485_monitor_dashboard_auth_proof"
 DEFAULT_DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS = 86400
 DEFAULT_DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS = "admin"
 DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60
+DASHBOARD_AUTH_CHALLENGE_TTL_SECONDS = 120
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
@@ -93,6 +96,7 @@ UI_TEXT = {
         "login_password": "비밀번호",
         "login_button": "로그인",
         "login_failed": "아이디 또는 비밀번호가 올바르지 않습니다.",
+        "login_browser_unsupported": "브라우저에서 WebCrypto를 지원하지 않아 로그인할 수 없습니다.",
         "logout": "로그아웃",
         "auth_not_configured": "대시보드 인증이 켜져 있지만 DASHBOARD_AUTH_USERS가 설정되지 않았습니다.",
         "login_success": "로그인되었습니다. 대시보드를 여는 중입니다.",
@@ -138,6 +142,7 @@ UI_TEXT = {
         "login_password": "Password",
         "login_button": "Log in",
         "login_failed": "Invalid username or password.",
+        "login_browser_unsupported": "Cannot log in because this browser does not support WebCrypto.",
         "logout": "Log out",
         "auth_not_configured": "Dashboard authentication is enabled, but DASHBOARD_AUTH_USERS is not set.",
         "login_success": "Login successful. Opening dashboard.",
@@ -516,6 +521,83 @@ def verify_dashboard_password(password: str, encoded_hash: str) -> bool:
     return hmac.compare_digest(actual_digest, expected_digest)
 
 
+def parse_dashboard_password_hash(encoded_hash: str) -> tuple[int, str, str] | None:
+    try:
+        algorithm, iterations_text, salt_hex, digest_hex = encoded_hash.split("$", 3)
+        iterations = int(iterations_text)
+    except ValueError:
+        return None
+
+    if algorithm != DASHBOARD_AUTH_HASH_ALGORITHM:
+        return None
+
+    try:
+        bytes.fromhex(salt_hex)
+        bytes.fromhex(digest_hex)
+    except ValueError:
+        return None
+
+    return iterations, salt_hex, digest_hex
+
+
+def build_dashboard_auth_challenge() -> dict[str, int | str]:
+    nonce = secrets.token_urlsafe(24)
+    expires_at = int(time.time()) + DASHBOARD_AUTH_CHALLENGE_TTL_SECONDS
+    payload = f"{nonce}.{expires_at}"
+    signature = sign_dashboard_auth_payload(payload)
+    return {
+        "nonce": nonce,
+        "expires_at": expires_at,
+        "signature": signature,
+    }
+
+
+def verify_dashboard_login_proof(
+    users: dict[str, str],
+    proof_data: dict,
+) -> str | None:
+    try:
+        username = str(proof_data["username"]).strip()
+        nonce = str(proof_data["nonce"]).strip()
+        expires_at = int(proof_data["expires_at"])
+        challenge_signature = str(proof_data["challenge_signature"]).strip().lower()
+        proof_hex = str(proof_data["proof"]).strip().lower()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    if not username or not nonce or not challenge_signature or not proof_hex:
+        return None
+
+    if expires_at <= int(time.time()):
+        return None
+
+    expected_challenge_signature = sign_dashboard_auth_payload(f"{nonce}.{expires_at}")
+    if not hmac.compare_digest(challenge_signature, expected_challenge_signature):
+        return None
+
+    encoded_hash = users.get(username)
+    if not encoded_hash:
+        return None
+
+    parsed_hash = parse_dashboard_password_hash(encoded_hash)
+    if not parsed_hash:
+        return None
+
+    _, _, digest_hex = parsed_hash
+    try:
+        key = bytes.fromhex(digest_hex)
+        provided_proof = bytes.fromhex(proof_hex)
+    except ValueError:
+        return None
+
+    message = f"{username}\n{nonce}\n{expires_at}".encode("utf-8")
+    expected_proof = hmac.new(key, message, hashlib.sha256).digest()
+    if not hmac.compare_digest(expected_proof, provided_proof):
+        return None
+
+    return username
+
+
 def parse_dashboard_auth_users() -> dict[str, str]:
     raw_users = os.getenv("DASHBOARD_AUTH_USERS", "").strip()
     users = {}
@@ -648,6 +730,211 @@ def get_dashboard_auth_cookie(st) -> str:
         return ""
 
     return value or ""
+
+
+def get_dashboard_auth_proof(st) -> dict | None:
+        try:
+                raw = st.context.cookies.get(DASHBOARD_AUTH_PROOF_COOKIE_NAME)
+        except Exception:
+                return None
+
+        if not raw:
+                return None
+
+        try:
+                decoded = unquote(raw)
+                data = json.loads(decoded)
+        except (TypeError, ValueError, json.JSONDecodeError):
+                return None
+
+        return data if isinstance(data, dict) else None
+
+
+def render_dashboard_auth_proof_cookie_script(st, payload: str | None, max_age: int) -> None:
+        import streamlit.components.v1 as components
+
+        cookie_name = json.dumps(DASHBOARD_AUTH_PROOF_COOKIE_NAME)
+        if payload is None:
+                cookie_value = '""'
+        else:
+                cookie_value = json.dumps(payload)
+
+        components.html(
+                f"""
+                <script>
+                    document.cookie = {cookie_name} + "=" + encodeURIComponent({cookie_value})
+                        + "; path=/; max-age=" + {str(max_age)} + "; samesite=lax";
+                </script>
+                """,
+                height=0,
+        )
+
+
+def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str]) -> None:
+        import streamlit.components.v1 as components
+
+        challenge = build_dashboard_auth_challenge()
+        user_config = {}
+        for username, encoded_hash in users.items():
+                parsed = parse_dashboard_password_hash(encoded_hash)
+                if not parsed:
+                        continue
+
+                iterations, salt_hex, _ = parsed
+                user_config[username] = {
+                        "iterations": iterations,
+                        "salt": salt_hex,
+                }
+
+        payload = {
+                "labels": {
+                        "login_failed": text["login_failed"],
+                        "browser_unsupported": text["login_browser_unsupported"],
+                },
+                "challenge": {
+                        "nonce": str(challenge["nonce"]),
+                        "expires_at": int(challenge["expires_at"]),
+                        "signature": str(challenge["signature"]),
+                },
+                "users": user_config,
+                "proof_cookie_name": DASHBOARD_AUTH_PROOF_COOKIE_NAME,
+        }
+        payload_json = json.dumps(payload).replace("</", "<\\/")
+
+        components.html(
+                f"""
+                <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                    <label for="dashboard-login-user" style="font-weight:600;">{html.escape(text["login_user"])} </label>
+                    <input id="dashboard-login-user" autocomplete="username"
+                                 style="padding:0.5rem; border:1px solid #cbd5e1; border-radius:0.5rem;" />
+                    <label for="dashboard-login-password" style="font-weight:600; margin-top:0.25rem;">{html.escape(text["login_password"])} </label>
+                    <input id="dashboard-login-password" type="password" autocomplete="current-password"
+                                 style="padding:0.5rem; border:1px solid #cbd5e1; border-radius:0.5rem;" />
+                    <button id="dashboard-login-submit" type="button"
+                                    style="margin-top:0.5rem; padding:0.55rem 0.75rem; border:0; border-radius:0.5rem; background:#2563eb; color:white; font-weight:600; cursor:pointer;">
+                        {html.escape(text["login_button"])}
+                    </button>
+                    <div id="dashboard-login-client-error" style="color:#dc2626; font-size:0.9rem;"></div>
+                </div>
+                <script>
+                    const config = {payload_json};
+                    const userInput = document.getElementById("dashboard-login-user");
+                    const passInput = document.getElementById("dashboard-login-password");
+                    const submitButton = document.getElementById("dashboard-login-submit");
+                    const errorBox = document.getElementById("dashboard-login-client-error");
+
+                    function setError(message) {{
+                        errorBox.textContent = message || "";
+                    }}
+
+                    function bytesToHex(buffer) {{
+                        const bytes = new Uint8Array(buffer);
+                        let hex = "";
+                        for (const value of bytes) {{
+                            hex += value.toString(16).padStart(2, "0");
+                        }}
+                        return hex;
+                    }}
+
+                    function hexToBytes(hexString) {{
+                        if (hexString.length % 2 !== 0) {{
+                            throw new Error("invalid hex");
+                        }}
+                        const bytes = new Uint8Array(hexString.length / 2);
+                        for (let i = 0; i < hexString.length; i += 2) {{
+                            bytes[i / 2] = Number.parseInt(hexString.slice(i, i + 2), 16);
+                        }}
+                        return bytes;
+                    }}
+
+                    async function buildProof(username, password, selectedUser) {{
+                        if (!window.crypto || !window.crypto.subtle) {{
+                            throw new Error(config.labels.browser_unsupported);
+                        }}
+
+                        const passwordKey = await window.crypto.subtle.importKey(
+                            "raw",
+                            new TextEncoder().encode(password),
+                            "PBKDF2",
+                            false,
+                            ["deriveBits"],
+                        );
+
+                        const derivedBits = await window.crypto.subtle.deriveBits(
+                            {{
+                                name: "PBKDF2",
+                                hash: "SHA-256",
+                                salt: hexToBytes(selectedUser.salt),
+                                iterations: Number(selectedUser.iterations),
+                            }},
+                            passwordKey,
+                            256,
+                        );
+
+                        const hmacKey = await window.crypto.subtle.importKey(
+                            "raw",
+                            derivedBits,
+                            {{ name: "HMAC", hash: "SHA-256" }},
+                            false,
+                            ["sign"],
+                        );
+
+                        const message = `${{username}}\\n${{config.challenge.nonce}}\\n${{config.challenge.expires_at}}`;
+                        const signature = await window.crypto.subtle.sign(
+                            "HMAC",
+                            hmacKey,
+                            new TextEncoder().encode(message),
+                        );
+
+                        return bytesToHex(signature);
+                    }}
+
+                    async function submitLogin() {{
+                        setError("");
+                        const username = userInput.value.trim();
+                        const password = passInput.value;
+                        if (!username || !password) {{
+                            return;
+                        }}
+
+                        const selectedUser = config.users[username];
+                        if (!selectedUser) {{
+                            setError(config.labels.login_failed);
+                            passInput.value = "";
+                            return;
+                        }}
+
+                        try {{
+                            submitButton.disabled = true;
+                            const proof = await buildProof(username, password, selectedUser);
+                            const proofPayload = JSON.stringify({{
+                                username,
+                                nonce: config.challenge.nonce,
+                                expires_at: config.challenge.expires_at,
+                                challenge_signature: config.challenge.signature,
+                                proof,
+                            }});
+                            document.cookie = config.proof_cookie_name + "=" + encodeURIComponent(proofPayload)
+                                + "; path=/; max-age=120; samesite=lax";
+                            passInput.value = "";
+                            window.parent.location.reload();
+                        }} catch (error) {{
+                            setError(error && error.message ? error.message : config.labels.browser_unsupported);
+                            submitButton.disabled = false;
+                        }}
+                    }}
+
+                    submitButton.addEventListener("click", submitLogin);
+                    passInput.addEventListener("keydown", (event) => {{
+                        if (event.key === "Enter") {{
+                            event.preventDefault();
+                            submitLogin();
+                        }}
+                    }});
+                </script>
+                """,
+                height=280,
+        )
 
 
 def clear_dashboard_auth_session(st) -> None:
@@ -1174,16 +1461,11 @@ def require_dashboard_auth(st, text: dict[str, str]) -> bool:
         render_cookie_script(st, None, 0)
         return False
 
-    st.subheader(text["login_title"])
-    with st.form("dashboard_login_form", clear_on_submit=False):
-        username = st.text_input(text["login_user"])
-        password = st.text_input(text["login_password"], type="password")
-        submitted = st.form_submit_button(text["login_button"])
-
-    if submitted:
-        encoded_hash = users.get(username.strip())
-        if encoded_hash and verify_dashboard_password(password, encoded_hash):
-            authenticated_user = username.strip()
+    proof_data = get_dashboard_auth_proof(st)
+    if proof_data:
+        render_dashboard_auth_proof_cookie_script(st, None, 0)
+        authenticated_user = verify_dashboard_login_proof(users, proof_data)
+        if authenticated_user:
             expires_at = get_dashboard_auth_expires_at(authenticated_user)
             set_dashboard_auth_session(st, authenticated_user, expires_at)
             token = build_dashboard_auth_cookie(authenticated_user, expires_at)
@@ -1196,6 +1478,9 @@ def require_dashboard_auth(st, text: dict[str, str]) -> bool:
             return False
 
         st.error(text["login_failed"])
+
+    st.subheader(text["login_title"])
+    render_dashboard_login_form(st, text, users)
 
     return False
 
