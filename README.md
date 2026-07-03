@@ -4,13 +4,17 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-This project is designed with the REMS (Renewable Energy Monitoring System) standard protocol operated by Korea Energy Agency as the primary baseline. It is currently validated and supported mainly for REMS-oriented usage, and parallel support for more generic Modbus RTU/TCP scenarios is being considered as a future extension.
+The current parser and protocol defaults are validated for InoElectric IEPVS-3.5-G1/G2.
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
-Alert channels use a small dispatcher registry under `src/solar_rs485_monitor/alerts/dispatcher.py` with shared message builders in `src/solar_rs485_monitor/alerts/message.py`. To add a new channel (for example Slack), implement a channel module with `get_config`, `has_config`, and `send_alert`, then register it in the dispatcher.
+## Start Here
 
-## Sink Screenshots
+- Check prerequisites in [Setup](#setup) and [Configuration File](#configuration-file).
+- For the fastest first run, start from [Quickstart With SQLite](#quickstart-with-sqlite).
+- Dashboard and sink-specific settings are documented in later sections.
+
+## Sink Screenshots (Optional Preview)
 
 <table>
   <tr>
@@ -43,7 +47,7 @@ Alert channels use a small dispatcher registry under `src/solar_rs485_monitor/al
   </tr>
 </table>
 
-## Physical Installation Photos
+## Physical Installation Photos (Optional Preview)
 
 <table>
   <tr>
@@ -228,7 +232,7 @@ General settings:
 
 ```env
 DASHBOARD_TITLE="Solar RS485 Monitor"
-DASHBOARD_LANGUAGE="Korean"
+DASHBOARD_LANGUAGE="English"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"
 DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
@@ -277,7 +281,7 @@ pip install solar-rs485-monitor
 For local development with `uv` and the project `.venv`:
 
 ```bash
-uv venv --python 3.14 .venv
+uv venv --python 3.10 .venv
 uv pip install --python .venv/bin/python -e .
 ```
 
@@ -301,14 +305,14 @@ For direct USB access:
 
 ```env
 SERIAL_PORT="/dev/ttyUSB0"
-#SERIAL_PORT="socket://192.168.35.6:9600"
+#SERIAL_PORT="socket://RS485_HOST_IP:9600"
 ```
 
 For the current development setup, where the RS485 USB adapter is attached to a remote RS485 host and WSL connects to it over TCP:
 
 ```env
 #SERIAL_PORT="/dev/ttyUSB0"
-SERIAL_PORT="socket://192.168.35.6:9600"
+SERIAL_PORT="socket://RS485_HOST_IP:9600"
 ```
 
 Keep both lines in the file if that is convenient, but only one should be uncommented. If both are uncommented, the last parsed value can win and make the active connection unclear.
@@ -343,12 +347,6 @@ Then set `solar-rs485-monitor.conf` in the WSL development environment:
 
 ```env
 SERIAL_PORT="socket://RS485_HOST_IP:9600"
-```
-
-Example:
-
-```env
-SERIAL_PORT="socket://192.168.35.6:9600"
 ```
 
 If the inverter does not respond over TCP, also check that the remote RS485 host serial device is using the expected speed. Depending on the adapter and OS configuration, you may need to include the baud rate in the `socat` file options, for example:
@@ -401,7 +399,7 @@ solar-rs485-monitor
 Override the port temporarily from the command line:
 
 ```bash
-solar-rs485-monitor --port socket://192.168.35.6:9600
+solar-rs485-monitor --port socket://RS485_HOST_IP:9600
 ```
 
 Repeat collection using `COLLECT_INTERVAL`:
@@ -508,7 +506,7 @@ Or enable every configured alert channel with one option:
 solar-rs485-monitor --loop --all-alerts
 ```
 
-With `--all-alerts`, Telegram is enabled only when `TELEGRAM_BOT_TOKEN` and at least one target (`TELEGRAM_CHAT_ID` or `TELEGRAM_CHAT_IDS`) are set. Use `--telegram` explicitly if you want missing configuration to be reported as an error.
+With `--all-alerts`, Telegram is enabled only when `TELEGRAM_BOT_TOKEN` and at least one target in `TELEGRAM_CHAT_IDS` are set. Use `--telegram` explicitly if you want missing configuration to be reported as an error.
 
 External sink/alert failures are isolated. If SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that channel and continues the remaining work. A failed sink or alert does not stop inverter collection or block another enabled channel.
 
@@ -675,7 +673,7 @@ ThingSpeak returns `0` when an update is rejected. Common causes are an invalid 
 To use `--mariadb`, configure these values in `solar-rs485-monitor.conf`:
 
 ```env
-MARIADB_HOST="132.145.80.109"
+MARIADB_HOST="YOUR_MARIADB_HOST"
 MARIADB_PORT="3306"
 MARIADB_USER="solar_logger"
 MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
@@ -919,6 +917,6 @@ Errors are also printed as JSON:
 - `SQLite unable to open database file`: check `SQLITE_PATH` and directory write permissions.
 - `OPENSEARCH_URL is not set`: set the OpenSearch endpoint before running with `--opensearch`.
 - `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
-- `Telegram request failed`: check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, bot permissions in the target group, and outbound network access to `api.telegram.org`.
+- `Telegram request failed`: check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, bot permissions in the target group, and outbound network access to `api.telegram.org`.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet header mismatch`: check that row 1 header columns match the expected schema.
