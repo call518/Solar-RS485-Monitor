@@ -2020,16 +2020,8 @@ def read_sqlite_data(
             ],
         )
 
-    df = normalize_dataframe(df)
-    mode_df = read_sqlite_fault_code_mode_data(
-        database_path=database_path,
-        table=table,
-        since=since,
-        until=until,
-        limit=limit,
-        bucket_seconds=bucket_seconds,
-    )
-    return merge_mode_fault_code(df, mode_df)
+    # Keep fault_code as bucket MAX so brief non-zero events are not diluted.
+    return normalize_dataframe(df)
 
 
 def read_mariadb_data(
@@ -2087,16 +2079,8 @@ def read_mariadb_data(
             ],
         )
 
-    df = normalize_dataframe(df)
-    mode_df = read_mariadb_fault_code_mode_data(
-        config=config,
-        table=table,
-        since=since_naive,
-        until=until_naive,
-        limit=limit,
-        bucket_seconds=bucket_seconds,
-    )
-    return merge_mode_fault_code(df, mode_df)
+    # Keep fault_code as bucket MAX so brief non-zero events are not diluted.
+    return normalize_dataframe(df)
 
 
 def read_fault_events(
