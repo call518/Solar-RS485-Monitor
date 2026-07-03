@@ -43,6 +43,71 @@ alert 채널은 `src/solar_rs485_monitor/alerts/dispatcher.py`의 registry와 `s
   </tr>
 </table>
 
+## 물리 연결 및 설치 실사
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-01-inverter-Inoelectric-IEPVS.jpg">
+        <img src="images/Photo-01-inverter-Inoelectric-IEPVS.jpg" alt="인버터 본체" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />인버터 본체
+    </td>
+    <td align="center">
+      <a href="images/Photo-02-RS485-Cable.jpg">
+        <img src="images/Photo-02-RS485-Cable.jpg" alt="RS485 케이블 경로 A" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 케이블 경로 A
+    </td>
+    <td align="center">
+      <a href="images/Photo-03-RS485-Cable.jpg">
+        <img src="images/Photo-03-RS485-Cable.jpg" alt="RS485 케이블 경로 B" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 케이블 경로 B
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-04-RS485-Cable.jpg">
+        <img src="images/Photo-04-RS485-Cable.jpg" alt="RS485 케이블 단자" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 케이블 단자
+    </td>
+    <td align="center">
+      <a href="images/Photo-05-RS485-Cable.jpg">
+        <img src="images/Photo-05-RS485-Cable.jpg" alt="RS485 케이블 배선" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 케이블 배선
+    </td>
+    <td align="center">
+      <a href="images/Photo-06-FT232-RS485toUSB-Converter.jpg">
+        <img src="images/Photo-06-FT232-RS485toUSB-Converter.jpg" alt="FT232 RS485 to USB 컨버터" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />FT232 RS485 to USB 컨버터
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-07-RS485-Cable.jpg">
+        <img src="images/Photo-07-RS485-Cable.jpg" alt="RS485 케이블 연결 상태" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 케이블 연결 상태
+    </td>
+    <td align="center">
+      <a href="images/Photo-08-RaspberryPi.jpg">
+        <img src="images/Photo-08-RaspberryPi.jpg" alt="Raspberry Pi 호스트 A" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Raspberry Pi 호스트 A
+    </td>
+    <td align="center">
+      <a href="images/Photo-09-RaspberryPi.jpg">
+        <img src="images/Photo-09-RaspberryPi.jpg" alt="Raspberry Pi 호스트 B" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Raspberry Pi 호스트 B
+    </td>
+  </tr>
+</table>
+
 ## 수집 데이터 요약
 
 현재 파서를 지원되는 InoElectric IEPVS-3.5-G1/G2 인버터와 함께 사용하면, 성공한 읽기마다 아래 핵심 값들이 생성됩니다.

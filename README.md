@@ -43,6 +43,71 @@ Alert channels use a small dispatcher registry under `src/solar_rs485_monitor/al
   </tr>
 </table>
 
+## Physical Installation Photos
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-01-inverter-Inoelectric-IEPVS.jpg">
+        <img src="images/Photo-01-inverter-Inoelectric-IEPVS.jpg" alt="Inverter unit" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Inverter unit
+    </td>
+    <td align="center">
+      <a href="images/Photo-02-RS485-Cable.jpg">
+        <img src="images/Photo-02-RS485-Cable.jpg" alt="RS485 cable path A" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 cable path A
+    </td>
+    <td align="center">
+      <a href="images/Photo-03-RS485-Cable.jpg">
+        <img src="images/Photo-03-RS485-Cable.jpg" alt="RS485 cable path B" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 cable path B
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-04-RS485-Cable.jpg">
+        <img src="images/Photo-04-RS485-Cable.jpg" alt="RS485 cable terminal" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 cable terminal
+    </td>
+    <td align="center">
+      <a href="images/Photo-05-RS485-Cable.jpg">
+        <img src="images/Photo-05-RS485-Cable.jpg" alt="RS485 cable routing" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 cable routing
+    </td>
+    <td align="center">
+      <a href="images/Photo-06-FT232-RS485toUSB-Converter.jpg">
+        <img src="images/Photo-06-FT232-RS485toUSB-Converter.jpg" alt="FT232 RS485 to USB converter" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />FT232 RS485 to USB converter
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="images/Photo-07-RS485-Cable.jpg">
+        <img src="images/Photo-07-RS485-Cable.jpg" alt="RS485 cable connection" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />RS485 cable connection
+    </td>
+    <td align="center">
+      <a href="images/Photo-08-RaspberryPi.jpg">
+        <img src="images/Photo-08-RaspberryPi.jpg" alt="Raspberry Pi host A" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Raspberry Pi host A
+    </td>
+    <td align="center">
+      <a href="images/Photo-09-RaspberryPi.jpg">
+        <img src="images/Photo-09-RaspberryPi.jpg" alt="Raspberry Pi host B" width="240" height="135" style="object-fit: cover; object-position: center;" />
+      </a>
+      <br />Raspberry Pi host B
+    </td>
+  </tr>
+</table>
+
 ## Collected Data at a Glance
 
 When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inverter, each successful read produces these core values:
