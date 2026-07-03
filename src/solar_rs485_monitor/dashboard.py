@@ -2580,7 +2580,7 @@ def render_dashboard_body(
         fault_color = "#16a34a"
         fault_bg = "#dcfce7"
 
-    fault_badge_text = f"{fault_label} ({fault_code})"
+    fault_badge_text = fault_label
 
     operation_label = FAULT_BIT_LABELS_KO.get(FAULT_OPERATION_STOP_BIT)
     fault_event_labels = get_fault_labels(fault_code, FAULT_EVENT_BITS)
