@@ -74,7 +74,10 @@ def ensure_sheet_headers(worksheet) -> None:
         worksheet.append_row(SHEET_HEADERS)
         return
 
-    if existing_headers != SHEET_HEADERS:
+    # Backward compatibility: allow extra trailing columns in older user sheets
+    # as long as the expected headers match from the first column.
+    expected_len = len(SHEET_HEADERS)
+    if existing_headers[:expected_len] != SHEET_HEADERS:
         raise RuntimeError(
             "Google Sheet header mismatch. "
             "Please check row 1 manually. "
