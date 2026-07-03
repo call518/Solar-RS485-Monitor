@@ -2134,6 +2134,103 @@ def read_fault_events(
     )
 
 
+def read_mariadb_latest_status_sample(
+    config: dict,
+    table: str,
+    since: datetime,
+    until: datetime,
+):
+    import pandas as pd
+    import pymysql
+
+    sql = (
+        "SELECT `timestamp`, `inverter_name`, `inverter_id`, "
+        "CAST(`fault_code` AS SIGNED) AS `fault_code` "
+        f"FROM `{table}` "
+        "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "ORDER BY `timestamp` DESC LIMIT 1"
+    )
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[since, until],
+        )
+
+    return normalize_dataframe(df)
+
+
+def read_sqlite_latest_status_sample(
+    database_path: Path,
+    table: str,
+    since: datetime,
+    until: datetime,
+):
+    import pandas as pd
+
+    sql = (
+        "SELECT timestamp, inverter_name, inverter_id, "
+        "CAST(\"fault_code\" AS INTEGER) AS fault_code "
+        f"FROM \"{table}\" "
+        "WHERE timestamp >= ? AND timestamp <= ? "
+        "ORDER BY timestamp DESC LIMIT 1"
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[since.isoformat(), until.isoformat()],
+        )
+
+    return normalize_dataframe(df)
+
+
+def read_latest_status_sample(
+    source: str,
+    since: datetime,
+    until: datetime,
+):
+    if source == "MariaDB":
+        config = get_mariadb_config()
+        validate_mariadb_config(config)
+        table = require_mariadb_identifier(config["table"], "table")
+        since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
+        until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
+        return read_mariadb_latest_status_sample(
+            config=config,
+            table=table,
+            since=since_naive,
+            until=until_naive,
+        )
+
+    config = get_sqlite_config()
+    database_path = Path(config["path"]).expanduser()
+    table = require_sqlite_identifier(config["table"], "table")
+    if not database_path.is_file():
+        raise RuntimeError(f"SQLite database not found: {database_path}")
+
+    return read_sqlite_latest_status_sample(
+        database_path=database_path,
+        table=table,
+        since=since,
+        until=until,
+    )
+
+
 def read_mariadb_daily_generation(
     since: datetime,
     until: datetime,
@@ -2466,10 +2563,20 @@ def render_dashboard_body(
         return
 
     latest = df.sort_values("timestamp").iloc[-1]
-    inverter_name = latest.get("inverter_name", "")
-    inverter_id = int(latest.get("inverter_id", 0))
+
+    status_sample = latest
     try:
-        fault_code = int(latest.get("fault_code", 0))
+        status_df = read_latest_status_sample(source, since, until)
+    except Exception:
+        status_df = None
+
+    if status_df is not None and not status_df.empty:
+        status_sample = status_df.sort_values("timestamp").iloc[-1]
+
+    inverter_name = status_sample.get("inverter_name", latest.get("inverter_name", ""))
+    inverter_id = int(status_sample.get("inverter_id", latest.get("inverter_id", 0)))
+    try:
+        fault_code = int(status_sample.get("fault_code", 0))
     except (TypeError, ValueError):
         fault_code = 0
 
