@@ -228,6 +228,13 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 
 The local `solar-rs485-monitor.conf` contains real credentials and must not be committed.
 
+The config template marks measurement-only requirements with `[Required]`.
+For the minimum operation test, leave all `[Sink][Optional]` and
+`[Alert][Optional]` settings unused and set `COLLECTOR_SINKS=""` plus
+`ALERT_CHANNELS=""`; the collector will only read the inverter and print JSON.
+The `[Sink]` and `[Alert]` labels still identify which feature each optional
+setting belongs to.
+
 General settings:
 
 ```env
@@ -246,8 +253,8 @@ DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS="86400"
 DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS="admin"
 COLLECT_INTERVAL="60"
 PYTHON_VENV_PATH="/opt/myapp/.venv"
-COLLECTOR_SINKS="all"
-ALERT_CHANNELS="telegram"
+COLLECTOR_SINKS=""
+ALERT_CHANNELS=""
 ```
 
 `DASHBOARD_TITLE` sets the Streamlit dashboard browser title and page heading.

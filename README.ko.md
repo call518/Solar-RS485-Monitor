@@ -228,6 +228,11 @@ cp solar-rs485-monitor.conf.template solar-rs485-monitor.conf
 
 로컬 `solar-rs485-monitor.conf`에는 실제 credential이 들어가므로 커밋하면 안 됩니다.
 
+설정 템플릿에서는 측정값만 가져오는 최소 실행에 필요한 항목을 `[Required]`로 표시합니다.
+최소 동작 테스트에서는 모든 `[Sink][Optional]`, `[Alert][Optional]` 설정을 사용하지 않고
+`COLLECTOR_SINKS=""`, `ALERT_CHANNELS=""`로 두면 collector가 인버터를 읽고 JSON만 출력합니다.
+`[Sink]`, `[Alert]` 표시는 이후에도 각 선택 설정이 어떤 기능에 속하는지 알려주는 용도로 유지합니다.
+
 공통 설정:
 
 ```env
@@ -246,8 +251,8 @@ DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS="86400"
 DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS="admin"
 COLLECT_INTERVAL="60"
 PYTHON_VENV_PATH="/opt/myapp/.venv"
-COLLECTOR_SINKS="all"
-ALERT_CHANNELS="telegram"
+COLLECTOR_SINKS=""
+ALERT_CHANNELS=""
 ```
 
 `DASHBOARD_TITLE`은 Streamlit 대시보드의 브라우저 제목과 화면 상단 제목으로 사용됩니다.

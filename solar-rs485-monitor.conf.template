@@ -1,86 +1,94 @@
 #
 # General
 #
-# Repeat collection interval seconds.
-# Used only with --loop. --interval overrides this value.
-# Values below 10 seconds are clamped to 10 seconds.
+# [Optional] Repeat collection interval seconds.
+# [Optional] Used only with --loop. --interval overrides this value.
+# [Optional] Values below 10 seconds are clamped to 10 seconds.
 COLLECT_INTERVAL="60"
 
-# Telegram Alert
-# Alert channel settings for fault event notifications.
+# [Optional] Python virtual environment path used by sample systemd units.
 PYTHON_VENV_PATH="/opt/myapp/.venv"
 
-# [Sink] Default collector sinks used only when no sink CLI flags are provided.
-# [Sink] Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
-# [Sink] Multiple sinks can be comma-separated, for example: mariadb,thingspeak
-COLLECTOR_SINKS="all"
+# [Sink][Optional] Default collector sinks used only when no sink CLI flags are provided.
+# [Sink][Optional] Leave empty for measurement-only collection.
+# [Sink][Optional] Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
+# [Sink][Optional] Multiple sinks can be comma-separated, for example: mariadb,thingspeak
+COLLECTOR_SINKS=""
 
-# [Alert] Default alert channels used only when no alert CLI flags are provided.
-# [Alert] Supported values: all, telegram
-ALERT_CHANNELS="telegram"
+# [Alert][Optional] Default alert channels used only when no alert CLI flags are provided.
+# [Alert][Optional] Leave empty for measurement-only collection.
+# [Alert][Optional] Supported values: all, telegram
+ALERT_CHANNELS=""
 
-# Streamlit dashboard title and server defaults.
+# [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"
 DASHBOARD_SERVER_PORT="8501"
 DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
-# Default auto-refresh selection in dashboard sidebar.
-# Supported values: 0, 10, 30, 60, 120, 300, 600
-# Values between 1 and 9 are clamped to 10.
+# [Optional] Default auto-refresh selection in dashboard sidebar.
+# [Optional] Supported values: 0, 10, 30, 60, 120, 300, 600
+# [Optional] Values between 1 and 9 are clamped to 10.
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
-# Default time axis scale in dashboard sidebar.
-# Supported values (case-insensitive): fixed, auto
+# [Optional] Default time axis scale in dashboard sidebar.
+# [Optional] Supported values (case-insensitive): fixed, auto
 DASHBOARD_TIME_AXIS_MODE="auto"
-# Default dashboard language at startup. Supported (case-insensitive):
-# English, Korean
+# [Optional] Default dashboard language at startup. Supported (case-insensitive):
+# [Optional] English, Korean
 DASHBOARD_LANGUAGE="English"
 
-# Optional dashboard login. Generate password hashes with:
-# solar-rs485-monitor-dashboard --hash-password
-# Format: username:pbkdf2_sha256$iterations$salt_hex$hash_hex
-# Multiple users can be comma-separated.
+# [Optional] Dashboard login. Generate password hashes with:
+# [Optional] solar-rs485-monitor-dashboard --hash-password
+# [Optional] Format: username:pbkdf2_sha256$iterations$salt_hex$hash_hex
+# [Optional] Multiple users can be comma-separated.
 DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
 DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS="86400"
-# Comma-separated usernames that receive long-lived login cookies.
-# Default behavior treats admin as persistent for backward compatibility.
+# [Optional] Comma-separated usernames that receive long-lived login cookies.
+# [Optional] Default behavior treats admin as persistent for backward compatibility.
 DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS="admin"
 
 #
-# Serial (RS485)
+# Serial (RS485) - Required for measurement
 #
-# Use a local USB adapter, or connect over TCP to the RS485 USB adapter
-# physically attached to the remote RS485 host.
-# Remote RS485 host TCP forwarding command:
-# /usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
+# [Required] Use a local USB adapter, or connect over TCP to the RS485 USB adapter
+# [Required] physically attached to the remote RS485 host.
+# [Optional] Remote RS485 host TCP forwarding command:
+# [Optional] /usr/bin/socat TCP-LISTEN:9600,reuseaddr,fork FILE:/dev/ttyUSB0,raw,echo=0
 SERIAL_PORT="/dev/ttyUSB0"
 #SERIAL_PORT="socket://RS485_HOST_IP:9600"
 
-# Serial Speed & Timeout
+# [Required] Serial speed and read behavior.
 SERIAL_BAUDRATE="9600"
 SERIAL_TIMEOUT="1.0"
 SERIAL_READ_RETRIES="2"
 
 #
-# Inverter Protocol
+# Inverter Protocol - Required for measurement
 #
+# [Required] Human-readable inverter label used in JSON output and sinks.
 INVERTER_NAME="YOUR_INVERTER_NAME"
+# [Required] Expected inverter ID in the response frame.
 INVERTER_ID="1"
+# [Required] Request frame sent to the inverter as hexadecimal bytes.
 INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
+# [Required] Expected response frame and payload lengths.
 INVERTER_FRAME_LENGTH="33"
 INVERTER_DATA_LENGTH="26"
+# [Required] CRC byte order in the response frame: LH or HL.
 INVERTER_CRC_ORDER="LH"
+# [Optional] Verify Modbus CRC16 before parsing the frame.
+INVERTER_VERIFY_CRC="true"
 
 #
-# [Alert] Telegram
-# [Alert] Alert channel settings for fault event notifications.
+# [Alert][Optional] Telegram
+# [Alert][Optional] Alert channel settings for fault event notifications.
 #
 TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
-# [Alert] Optional comma-separated target chat/group IDs for fan-out delivery.
-# [Alert] Example: "31627266,-4296182742,-8346162149"
+# [Alert][Optional] Comma-separated target chat/group IDs for fan-out delivery.
+# [Alert][Optional] Example: "31627266,-4296182742,-8346162149"
 TELEGRAM_CHAT_IDS=""
 TELEGRAM_MESSAGE_THREAD_ID=""
 TELEGRAM_TIMEOUT="5.0"
@@ -88,18 +96,18 @@ TELEGRAM_DISABLE_NOTIFICATION="false"
 TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
-# Also send Telegram alert on standby transition (fault_code Bit 0: 0 -> 1).
-# Default is false to preserve existing behavior.
+# [Alert][Optional] Also send Telegram alert on standby transition (fault_code Bit 0: 0 -> 1).
+# [Alert][Optional] Default is false to preserve existing behavior.
 TELEGRAM_SEND_STANDBY_EVENT="false"
 
 #
-# [Sink] ThingSpeak
+# [Sink][Optional] ThingSpeak
 #
 THINGSPEAK_API_KEY="YOUR_THINGSPEAK_WRITE_API_KEY"
 THINGSPEAK_TIMEOUT="5.0"
 
 #
-# [Sink] MariaDB
+# [Sink][Optional] MariaDB
 #
 MARIADB_HOST="YOUR_MARIADB_HOST"
 MARIADB_PORT="3306"
@@ -110,15 +118,15 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 
 #
-# [Sink] SQLite
+# [Sink][Optional] SQLite
 #
-# [Sink] SQLite is the simplest local sink. The database file and table are
-# [Sink] created automatically when --sqlite or --all-sinks is used.
+# [Sink][Optional] SQLite is the simplest local sink. The database file and table are
+# [Sink][Optional] created automatically when --sqlite or --all-sinks is used.
 SQLITE_PATH="/var/lib/solar-rs485-monitor/solar-rs485-monitor.sqlite3"
 SQLITE_TABLE="inverter_log"
 
 #
-# [Sink] OpenSearch / Elasticsearch
+# [Sink][Optional] OpenSearch / Elasticsearch
 #
 OPENSEARCH_URL="https://YOUR_OPENSEARCH_HOST:9200"
 OPENSEARCH_INDEX="solar-rs485-monitor"
@@ -128,14 +136,14 @@ OPENSEARCH_TIMEOUT="5.0"
 OPENSEARCH_VERIFY_TLS="true"
 
 #
-# [Sink] Google Sheets
+# [Sink][Optional] Google Sheets
 #
 GOOGLE_SHEET_FILE_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
-# [Sink] Supports strftime pattern. Example monthly tabs: "%Y-%m" -> 2026-07
+# [Sink][Optional] Supports strftime pattern. Example monthly tabs: "%Y-%m" -> 2026-07
 GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
 
 #
-# [Sink] Google Service Account
+# [Sink][Optional] Google Service Account
 #
 GOOGLE_TYPE="service_account"
 GOOGLE_PROJECT_ID="your-project-id"
