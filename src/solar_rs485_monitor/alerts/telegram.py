@@ -12,6 +12,9 @@ from solar_rs485_monitor.alerts.message import (
 
 
 FAULT_EVENT_MASK = 0xFFFE
+OPERATION_STOP_MASK = 0x0001
+
+_last_operation_stopped: bool | None = None
 
 
 def parse_chat_ids(chat_ids_text: str, single_chat_id: str) -> list[str]:
@@ -56,6 +59,10 @@ def get_telegram_config() -> dict:
         "send_fault_event": os.getenv(
             "TELEGRAM_SEND_FAULT_EVENT",
             "true",
+        ).strip().lower() in ("1", "true", "yes", "y", "on"),
+        "send_standby_event": os.getenv(
+            "TELEGRAM_SEND_STANDBY_EVENT",
+            "false",
         ).strip().lower() in ("1", "true", "yes", "y", "on"),
     }
 
@@ -144,13 +151,26 @@ def send_to_all_chat_ids(config: dict, text: str) -> dict:
 
 
 def write_to_telegram(data: dict, config: dict) -> dict:
+    global _last_operation_stopped
+
     sent_summary = {"sent": [], "failed": []}
     sent_event = {"sent": [], "failed": []}
 
     fault_code = parse_int_value(data.get("fault_code"), 0)
     is_fault_event = (fault_code & FAULT_EVENT_MASK) != 0
+    is_operation_stopped = (fault_code & OPERATION_STOP_MASK) != 0
 
-    if not is_fault_event:
+    standby_transition = False
+    if config.get("send_standby_event", False):
+        standby_transition = _last_operation_stopped is False and is_operation_stopped
+
+    if _last_operation_stopped is None:
+        _last_operation_stopped = is_operation_stopped
+
+    should_send = is_fault_event or standby_transition
+
+    if not should_send:
+        _last_operation_stopped = is_operation_stopped
         return {
             "summary": None,
             "fault_event": None,
@@ -158,11 +178,29 @@ def write_to_telegram(data: dict, config: dict) -> dict:
             "chat_ids": config.get("chat_ids", []),
         }
 
-    if config.get("send_fault_event", True):
+    if is_fault_event and config.get("send_fault_event", True):
         sent_event = send_to_all_chat_ids(config, build_fault_event_message(data))
+
+    if standby_transition and config.get("send_standby_event", False):
+        standby_message = "\n".join(
+            [
+                "*Solar RS485 Standby Event*",
+                f"Time: `{data.get('@timestamp', '-')}`",
+                f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
+                f"Fault code: `{fault_code}`",
+                "State: `STANDBY (Bit 0 = 1)`",
+            ]
+        )
+        sent_standby = send_to_all_chat_ids(config, standby_message)
+        sent_event = {
+            "sent": sent_event.get("sent", []) + sent_standby.get("sent", []),
+            "failed": sent_event.get("failed", []) + sent_standby.get("failed", []),
+        }
 
     if config.get("send_summary", False):
         sent_summary = send_to_all_chat_ids(config, build_summary_message(data))
+
+    _last_operation_stopped = is_operation_stopped
 
     return {
         "summary": sent_summary,

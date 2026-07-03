@@ -559,6 +559,7 @@ TELEGRAM_DISABLE_NOTIFICATION="false"
 TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
+TELEGRAM_SEND_STANDBY_EVENT="false"
 ```
 
 `TELEGRAM_BOT_TOKEN`은 BotFather에서 발급받은 봇 API 토큰입니다. `TELEGRAM_CHAT_IDS`는 fan-out 전송 대상 채팅/그룹 ID를 comma-separated 형식으로 설정합니다. Telegram 포럼 토픽에 보내려면 `TELEGRAM_MESSAGE_THREAD_ID`를 설정합니다.
@@ -566,6 +567,8 @@ TELEGRAM_SEND_FAULT_EVENT="true"
 대상이 여러 개일 때는 모든 대상에 전송을 시도하며, 일부 대상 전송 실패가 다른 대상 전송을 중단시키지 않습니다.
 
 기본 동작은 alert 채널에서 정상 측정값을 스킵하고, 장애 이벤트(운전 상태 비트인 Bit 0 제외, Bit 1+ 중 하나라도 활성)가 감지될 때만 메시지를 전송합니다. 장애 이벤트 메시지에는 주요 측정값과 활성 fault bit 정보가 포함됩니다. 이벤트 시 요약 메시지도 함께 보내려면 `TELEGRAM_SEND_SUMMARY="true"`로 설정하세요.
+
+인버터 대기/오프 전환(Bit 0)도 Telegram으로 받고 싶다면 `TELEGRAM_SEND_STANDBY_EVENT="true"`로 설정하세요. 이 옵션은 `fault_code` Bit 0이 `0 -> 1`로 바뀌는 전이 시점에만 1회 전송하도록 동작하므로, 야간 저전력 상태에서 같은 알림이 반복 전송되는 것을 방지합니다.
 
 ## 대시보드
 

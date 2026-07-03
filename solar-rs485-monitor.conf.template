@@ -88,6 +88,9 @@ TELEGRAM_DISABLE_NOTIFICATION="false"
 TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
+# Also send Telegram alert on standby transition (fault_code Bit 0: 0 -> 1).
+# Default is false to preserve existing behavior.
+TELEGRAM_SEND_STANDBY_EVENT="false"
 
 #
 # [Sink] ThingSpeak
