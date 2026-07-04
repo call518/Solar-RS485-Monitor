@@ -37,6 +37,11 @@ DASHBOARD_TIME_AXIS_MODE="auto"
 # [Optional] Default dashboard language at startup. Supported (case-insensitive):
 # [Optional] English, Korean
 DASHBOARD_LANGUAGE="English"
+# [Optional] Default query range selection in dashboard sidebar.
+# [Optional] Supported values (case-sensitive): Today, Last 1 hour, Last 6 hours,
+# [Optional]   Last 24 hours, Last 2 days, Last 3 days, Last 7 days, Last 30 days,
+# [Optional]   Last 90 days, Last 6 months
+DASHBOARD_DEFAULT_RANGE="Last 2 days"
 
 # [Optional] Dashboard login. Generate password hashes with:
 # [Optional] solar-rs485-monitor-dashboard --hash-password

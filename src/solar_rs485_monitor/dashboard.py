@@ -35,6 +35,7 @@ DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
 DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
+DEFAULT_DASHBOARD_RANGE = "Last 2 days"
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -430,6 +431,15 @@ def get_dashboard_time_axis_mode() -> str:
         return mode
 
     return DEFAULT_DASHBOARD_TIME_AXIS_MODE
+
+
+def get_dashboard_default_range() -> str:
+    raw = os.getenv("DASHBOARD_DEFAULT_RANGE", "").strip()
+
+    if raw in RANGES:
+        return raw
+
+    return DEFAULT_DASHBOARD_RANGE
 
 
 def is_operation_stopped(fault_code: int) -> bool:
@@ -2840,7 +2850,7 @@ def run_app() -> None:
         if "dashboard_range_name" not in st.session_state:
             query_range = get_query_param("range")
             st.session_state["dashboard_range_name"] = (
-                query_range if query_range in RANGES else "Today"
+                query_range if query_range in RANGES else get_dashboard_default_range()
             )
 
         range_name = st.selectbox(
