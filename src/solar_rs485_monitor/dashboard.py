@@ -1627,26 +1627,39 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
     )
 
 
-def chart_title(metric_name: str, latest, metric_labels: dict[str, str]) -> str:
-    label = metric_labels.get(metric_name, metric_name)
-    value = format_snapshot_value(metric_name, latest.get(metric_name))
+def chart_title(metric_name: str, metric_labels: dict[str, str]) -> str:
+    return metric_labels.get(metric_name, metric_name)
 
-    # Merge trailing unit from label (e.g. "... (W)") into "(value unit)".
-    unit = None
-    base_label = label
 
-    if label.endswith(")") and " (" in label:
-        base_label, trailing = label.rsplit(" (", 1)
-        unit_candidate = trailing[:-1].strip()
-        if unit_candidate:
-            unit = unit_candidate
-        else:
-            base_label = label
+def format_chart_stats(metric_name: str, chart_df, latest: dict) -> str | None:
+    if metric_name not in chart_df.columns:
+        return None
+    values = chart_df[metric_name].dropna()
+    if values.empty:
+        return None
+    latest_val = format_snapshot_value(metric_name, latest.get(metric_name))
+    avg = format_snapshot_value(metric_name, values.mean())
+    min_ = format_snapshot_value(metric_name, values.min())
+    max_ = format_snapshot_value(metric_name, values.max())
+    med = format_snapshot_value(metric_name, values.median())
+    std = format_snapshot_value(metric_name, values.std()) if len(values) > 1 else "-"
+    return f"Latest: {latest_val} / Avg: {avg} / Min: {min_} / Max: {max_} / Med: {med} / Std: {std}"
 
-    if unit is not None:
-        return f"{base_label} ({value} {unit})"
 
-    return f"{label} ({value})"
+def format_daily_generation_stats(daily_df) -> str | None:
+    if "value" not in daily_df.columns:
+        return None
+    values = daily_df["value"].dropna()
+    if values.empty:
+        return None
+
+    latest_val = f"{float(values.iloc[-1]):.3f}"
+    avg = f"{float(values.mean()):.3f}"
+    min_ = f"{float(values.min()):.3f}"
+    max_ = f"{float(values.max()):.3f}"
+    med = f"{float(values.median()):.3f}"
+    std = f"{float(values.std()):.3f}" if len(values) > 1 else "-"
+    return f"Latest: {latest_val} / Avg: {avg} / Min: {min_} / Max: {max_} / Med: {med} / Std: {std}"
 
 
 def build_nonzero_metric_domain(values) -> list[float] | None:
@@ -2666,17 +2679,14 @@ def render_dashboard_body(
     render_latest_metric_board(st, latest, metric_labels)
 
     chart_df = df.sort_values("timestamp").set_index("timestamp")
-    st.subheader(text["metric_charts"])
-    st.caption(
-        text["chart_caption"].format(
-            bucket=BUCKET_LABELS[lang][bucket_seconds],
-        )
-    )
 
     for group in CHART_GROUPS:
         if len(group) == 1:
             metric_name = group[0]
-            st.markdown(f"#### {chart_title(metric_name, latest, metric_labels)}")
+            st.markdown(f"#### {chart_title(metric_name, metric_labels)}")
+            stats = format_chart_stats(metric_name, chart_df, latest)
+            if stats:
+                st.caption(stats)
             if metric_name in BAR_CHART_COLORS:
                 render_bar_chart(
                     st,
@@ -2713,6 +2723,9 @@ def render_dashboard_body(
                         st.caption(text["daily_generation_empty"])
                     else:
                         st.markdown(f"#### {text['daily_generation_chart']}")
+                        daily_stats = format_daily_generation_stats(daily_df)
+                        if daily_stats:
+                            st.caption(daily_stats)
                         render_daily_generation_chart(
                             st=st,
                             daily_df=daily_df,
@@ -2730,7 +2743,10 @@ def render_dashboard_body(
 
         for column, metric_name in zip(chart_columns, group):
             with column:
-                st.markdown(f"#### {chart_title(metric_name, latest, metric_labels)}")
+                st.markdown(f"#### {chart_title(metric_name, metric_labels)}")
+                stats = format_chart_stats(metric_name, chart_df, latest)
+                if stats:
+                    st.caption(stats)
                 if metric_name in BAR_CHART_COLORS:
                     render_bar_chart(
                         st,
