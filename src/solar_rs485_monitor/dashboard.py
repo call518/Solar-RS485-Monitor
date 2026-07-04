@@ -2244,7 +2244,7 @@ def read_mariadb_daily_generation(
     sql = (
         "SELECT "
         "DATE(CONVERT_TZ(`timestamp`, '+00:00', %s)) AS day_local, "
-        "GREATEST(" 
+        "GREATEST("
         "MAX(`total_generation_kwh`) - "
         "COALESCE(MIN(NULLIF(`total_generation_kwh`, 0)), MAX(`total_generation_kwh`)), "
         "0"
