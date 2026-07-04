@@ -1705,9 +1705,16 @@ def render_area_echart(
     if chart_data.empty:
         return
 
+    gap_threshold = timedelta(minutes=30)
     points = []
+    prev_ts = None
     for _, row in chart_data.iterrows():
-        points.append([row["timestamp"].isoformat(), float(row["value"])])
+        ts = row["timestamp"]
+        if prev_ts is not None and (ts - prev_ts) > gap_threshold:
+            mid_ts = (prev_ts + (ts - prev_ts) / 2).isoformat()
+            points.append([mid_ts, None])
+        points.append([ts.isoformat(), float(row["value"])])
+        prev_ts = ts
 
     domain = build_nonzero_metric_domain(chart_data["value"])
     y_min = None
@@ -1758,6 +1765,7 @@ def render_area_echart(
                 "type": "line",
                 "showSymbol": False,
                 "smooth": True,
+                "connectNulls": False,
                 "lineStyle": {"width": 2, "color": color},
                 "areaStyle": {"opacity": 0.18, "color": color},
                 "itemStyle": {"color": color},
