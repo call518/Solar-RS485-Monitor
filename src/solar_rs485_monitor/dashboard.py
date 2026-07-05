@@ -120,6 +120,10 @@ UI_TEXT = {
         "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
         "daily_generation_chart": "일일 발전량 (kWh/day)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
+        "monthly_generation_chart": "월간 발전량 (kWh/month)",
+        "monthly_generation_empty": "선택한 범위에 월간 발전량 데이터가 없습니다.",
+        "yearly_generation_chart": "연간 발전량 (kWh/year)",
+        "yearly_generation_empty": "선택한 범위에 연간 발전량 데이터가 없습니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
         "fault_events_caption": "선택한 범위에서 fault_code가 0이 아닌 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
@@ -168,6 +172,10 @@ UI_TEXT = {
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
         "daily_generation_chart": "Daily Generation (kWh/day)",
         "daily_generation_empty": "No daily generation data in the selected range.",
+        "monthly_generation_chart": "Monthly Generation (kWh/month)",
+        "monthly_generation_empty": "No monthly generation data in the selected range.",
+        "yearly_generation_chart": "Yearly Generation (kWh/year)",
+        "yearly_generation_empty": "No yearly generation data in the selected range.",
         "fault_events": "Fault Events (Recent 200)",
         "fault_events_caption": "Latest events where fault_code is non-zero within the selected range.",
         "fault_events_empty": "No fault events in the selected range.",
@@ -1662,6 +1670,23 @@ def format_daily_generation_stats(daily_df) -> str | None:
     return f"Latest: {latest_val} / Avg: {avg} / Min: {min_} / Max: {max_} / Med: {med} / Std: {std}"
 
 
+def format_period_generation_stats(period_df) -> str | None:
+    if "value" not in period_df.columns:
+        return None
+
+    values = period_df["value"].dropna()
+    if values.empty:
+        return None
+
+    latest_val = f"{float(values.iloc[-1]):.3f}"
+    avg = f"{float(values.mean()):.3f}"
+    min_ = f"{float(values.min()):.3f}"
+    max_ = f"{float(values.max()):.3f}"
+    med = f"{float(values.median()):.3f}"
+    std = f"{float(values.std()):.3f}" if len(values) > 1 else "-"
+    return f"Latest: {latest_val} / Avg: {avg} / Min: {min_} / Max: {max_} / Med: {med} / Std: {std}"
+
+
 def build_nonzero_metric_domain(values) -> list[float] | None:
     numeric_values = []
 
@@ -2539,6 +2564,111 @@ def render_daily_generation_chart(
     )
 
 
+def aggregate_generation_by_period(
+    daily_df,
+    display_timezone: ZoneInfo,
+    period: str,
+):
+    import pandas as pd
+
+    chart_data = daily_df.dropna(subset=["timestamp", "value"]).copy()
+    if chart_data.empty:
+        return pd.DataFrame(columns=["label", "value"])
+
+    chart_data = chart_data.sort_values("timestamp")
+    labels: list[str] = []
+    for timestamp in chart_data["timestamp"]:
+        value = timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else timestamp
+        if not isinstance(value, datetime):
+            labels.append("")
+            continue
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        local_dt = value.astimezone(display_timezone)
+        if period == "month":
+            labels.append(local_dt.strftime("%Y-%m"))
+        else:
+            labels.append(local_dt.strftime("%Y"))
+
+    chart_data["period_label"] = labels
+    chart_data = chart_data[chart_data["period_label"] != ""]
+    if chart_data.empty:
+        return pd.DataFrame(columns=["label", "value"])
+
+    grouped = (
+        chart_data.groupby("period_label", as_index=False)["value"]
+        .sum()
+        .sort_values("period_label")
+        .rename(columns={"period_label": "label"})
+    )
+    grouped["value"] = pd.to_numeric(grouped["value"], errors="coerce").fillna(0.0)
+    return grouped
+
+
+def render_period_generation_chart(
+    st,
+    period_df,
+    title: str,
+    chart_key_prefix: str,
+    color: str,
+) -> None:
+    from streamlit_echarts import st_echarts
+
+    if period_df.empty:
+        return
+
+    categories = period_df["label"].astype(str).tolist()
+    values = [float(value) for value in period_df["value"].tolist()]
+    if not categories:
+        return
+
+    chart_key = (
+        f"{chart_key_prefix}_"
+        f"{categories[-1]}_"
+        f"{values[-1]:.6f}_"
+        f"{len(categories)}"
+    )
+
+    options = {
+        "animation": False,
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "xAxis": {
+            "type": "category",
+            "data": categories,
+            "axisLabel": {
+                "hideOverlap": True,
+                "interval": "auto",
+            },
+        },
+        "yAxis": {
+            "type": "value",
+            "scale": True,
+            "min": 0,
+        },
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {"type": "shadow"},
+        },
+        "series": [
+            {
+                "name": title,
+                "type": "bar",
+                "barMaxWidth": 42,
+                "barMinWidth": 16,
+                "itemStyle": {"color": color},
+                "data": values,
+            }
+        ],
+    }
+
+    st_echarts(
+        options=options,
+        height="300px",
+        renderer="svg",
+        key=chart_key,
+    )
+
+
 def render_dashboard_body(
     st,
     source: str,
@@ -2735,6 +2865,50 @@ def render_dashboard_body(
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
+                        monthly_df = aggregate_generation_by_period(
+                            daily_df=daily_df,
+                            display_timezone=display_timezone,
+                            period="month",
+                        )
+                        yearly_df = aggregate_generation_by_period(
+                            daily_df=daily_df,
+                            display_timezone=display_timezone,
+                            period="year",
+                        )
+
+                        monthly_col, yearly_col = st.columns(2)
+                        with monthly_col:
+                            st.markdown(f"#### {text['monthly_generation_chart']}")
+                            if monthly_df.empty:
+                                st.caption(text["monthly_generation_empty"])
+                            else:
+                                monthly_stats = format_period_generation_stats(monthly_df)
+                                if monthly_stats:
+                                    st.caption(monthly_stats)
+                                render_period_generation_chart(
+                                    st=st,
+                                    period_df=monthly_df,
+                                    title=text["monthly_generation_chart"],
+                                    chart_key_prefix="echart_monthly_generation",
+                                    color="#0284c7",
+                                )
+
+                        with yearly_col:
+                            st.markdown(f"#### {text['yearly_generation_chart']}")
+                            if yearly_df.empty:
+                                st.caption(text["yearly_generation_empty"])
+                            else:
+                                yearly_stats = format_period_generation_stats(yearly_df)
+                                if yearly_stats:
+                                    st.caption(yearly_stats)
+                                render_period_generation_chart(
+                                    st=st,
+                                    period_df=yearly_df,
+                                    title=text["yearly_generation_chart"],
+                                    chart_key_prefix="echart_yearly_generation",
+                                    color="#0f766e",
+                                )
+
                         if daily_df.empty:
                             st.caption(text["daily_generation_empty"])
             continue
