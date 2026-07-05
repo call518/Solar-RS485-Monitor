@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
+from gspread.exceptions import APIError, SpreadsheetNotFound
 
 
 SHEET_HEADERS = [
@@ -24,6 +24,7 @@ SHEET_HEADERS = [
 
 _google_client = None
 _google_spreadsheet = None
+_cached_spreadsheet_name = None
 _cached_worksheet_name = None
 _cached_worksheet = None
 
@@ -85,17 +86,28 @@ def ensure_sheet_headers(worksheet) -> None:
         )
 
 
-def resolve_worksheet_name(reference_time: datetime | None = None) -> str:
-    worksheet_name = os.getenv("GOOGLE_WORKSHEET_NAME")
-
-    if not worksheet_name:
-        raise RuntimeError("GOOGLE_WORKSHEET_NAME is not set")
-
-    if "%" not in worksheet_name:
-        return worksheet_name
-
+def resolve_reference_time(reference_time: datetime | None = None) -> datetime:
     ts = reference_time or datetime.now(timezone.utc)
-    return ts.strftime(worksheet_name)
+
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+
+    return ts.astimezone(timezone.utc)
+
+
+def resolve_spreadsheet_name(reference_time: datetime | None = None) -> str:
+    base_name = get_google_sheet_file_name()
+    ts = resolve_reference_time(reference_time)
+
+    if "%" in base_name:
+        return ts.strftime(base_name)
+
+    return f"{base_name}-{ts.year}"
+
+
+def resolve_worksheet_name(reference_time: datetime | None = None) -> str:
+    ts = resolve_reference_time(reference_time)
+    return f"{ts.year}-{ts.month:02d}"
 
 
 def get_google_client():
@@ -118,32 +130,69 @@ def get_google_client():
     return _google_client
 
 
-def get_google_spreadsheet(client):
+def get_google_spreadsheet(client, reference_time: datetime | None = None):
     global _google_spreadsheet
+    global _cached_spreadsheet_name
 
-    if _google_spreadsheet is not None:
+    spreadsheet_name = resolve_spreadsheet_name(reference_time)
+
+    if _google_spreadsheet is not None and _cached_spreadsheet_name == spreadsheet_name:
         return _google_spreadsheet
-
-    spreadsheet_name = get_google_sheet_file_name()
-    client_email = os.getenv("GOOGLE_CLIENT_EMAIL")
 
     try:
         _google_spreadsheet = client.open(spreadsheet_name)
     except SpreadsheetNotFound:
-        raise RuntimeError(
-            "Google Sheet not found or access denied. "
-            f"sheet_name={spreadsheet_name!r}. "
-            "Check that the spreadsheet exists and is shared with "
-            f"{client_email!r}."
-        )
+        _google_spreadsheet = client.create(spreadsheet_name)
+
+    _cached_spreadsheet_name = spreadsheet_name
 
     return _google_spreadsheet
+
+
+def ensure_yearly_monthly_worksheets(
+    spreadsheet,
+    year: int,
+    current_month_name: str,
+):
+    monthly_titles = [f"{year}-{month:02d}" for month in range(1, 13)]
+    worksheet_cache = {}
+
+    try:
+        worksheets = spreadsheet.worksheets()
+    except APIError:
+        worksheets = []
+
+    for worksheet in worksheets:
+        worksheet_cache[worksheet.title] = worksheet
+
+    current_worksheet = None
+
+    for title in monthly_titles:
+        worksheet = worksheet_cache.get(title)
+
+        if worksheet is None:
+            worksheet = spreadsheet.add_worksheet(
+                title=title,
+                rows=1000,
+                cols=max(20, len(SHEET_HEADERS)),
+            )
+
+        ensure_sheet_headers(worksheet)
+
+        if title == current_month_name:
+            current_worksheet = worksheet
+
+    if current_worksheet is None:
+        raise RuntimeError(f"Failed to resolve Google worksheet: {current_month_name}")
+
+    return current_worksheet
 
 
 def get_google_sheet(reference_time: datetime | None = None):
     global _cached_worksheet
     global _cached_worksheet_name
 
+    ts = resolve_reference_time(reference_time)
     worksheet_name = resolve_worksheet_name(reference_time)
 
     if _cached_worksheet is not None and _cached_worksheet_name == worksheet_name:
@@ -151,18 +200,12 @@ def get_google_sheet(reference_time: datetime | None = None):
 
     try:
         client = get_google_client()
-        spreadsheet = get_google_spreadsheet(client)
-
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-        except WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(
-                title=worksheet_name,
-                rows=1000,
-                cols=max(20, len(SHEET_HEADERS)),
-            )
-
-        ensure_sheet_headers(worksheet)
+        spreadsheet = get_google_spreadsheet(client, ts)
+        worksheet = ensure_yearly_monthly_worksheets(
+            spreadsheet=spreadsheet,
+            year=ts.year,
+            current_month_name=worksheet_name,
+        )
         _cached_worksheet = worksheet
         _cached_worksheet_name = worksheet_name
         return worksheet

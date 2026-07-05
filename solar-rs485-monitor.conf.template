@@ -158,9 +158,13 @@ OPENSEARCH_VERIFY_TLS="true"
 #
 # [Sink][Optional] Google Sheets
 #
+# [Sink][Optional] Base name for yearly spreadsheets.
+# [Sink][Optional] Runtime creates and writes to "<GOOGLE_SHEET_FILE_NAME>-YYYY" automatically.
+# [Sink][Optional] Example: "Solar-RS485-Monitor" -> "Solar-RS485-Monitor-2026"
+# [Sink][Optional] Reserved for backward compatibility. Monthly worksheets are managed automatically
+# [Sink][Optional] as YYYY-01 .. YYYY-12 in each yearly spreadsheet.
 GOOGLE_SHEET_FILE_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
-# [Sink][Optional] Supports strftime pattern. Example monthly tabs: "%Y-%m" -> 2026-07
-GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
+GOOGLE_WORKSHEET_NAME=""
 
 #
 # [Sink][Optional] Google Service Account
