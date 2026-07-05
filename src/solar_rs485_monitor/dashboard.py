@@ -1789,7 +1789,7 @@ def render_area_echart(
         if prev_ts is not None and (ts - prev_ts) > gap_threshold:
             mid_ts = (prev_ts + (ts - prev_ts) / 2).isoformat()
             points.append([mid_ts, None])
-        points.append([ts.isoformat(), float(row["value"])])
+        points.append([ts.isoformat(), round(float(row["value"]), 3)])
         prev_ts = ts
 
     domain = build_nonzero_metric_domain(chart_data["value"])
@@ -1899,7 +1899,7 @@ def render_total_generation_echart(
     for _, row in echart_data.iterrows():
         timestamp = row["timestamp"]
         value = row["value"]
-        points.append([timestamp.isoformat(), float(value)])
+        points.append([timestamp.isoformat(), round(float(value), 3)])
 
     domain = build_nonzero_metric_domain(echart_data["value"])
     y_min = None
@@ -2005,7 +2005,11 @@ def render_bar_chart(
 
     points = []
     for _, row in chart_data.iterrows():
-        points.append([row["timestamp"].isoformat(), float(row["value"])])
+        raw_value = float(row["value"])
+        if metric_name == "fault_code":
+            points.append([row["timestamp"].isoformat(), int(round(raw_value))])
+        else:
+            points.append([row["timestamp"].isoformat(), round(raw_value, 3)])
 
     x_axis = {
         "type": "time",
@@ -2553,7 +2557,7 @@ def render_daily_generation_chart(
     if not categories:
         return
 
-    values = [value_by_day.get(day, 0.0) for day in categories]
+    values = [round(float(value_by_day.get(day, 0.0)), 3) for day in categories]
 
     x_axis = {
         "type": "category",
@@ -2666,7 +2670,7 @@ def render_period_generation_chart(
         return
 
     categories = period_df["label"].astype(str).tolist()
-    values = [float(value) for value in period_df["value"].tolist()]
+    values = [round(float(value), 3) for value in period_df["value"].tolist()]
     if not categories:
         return
 
