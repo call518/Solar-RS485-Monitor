@@ -238,13 +238,11 @@ BUCKET_LABELS = {
     },
 }
 
-REFRESH_SECONDS = [0, 10, 30, 60, 120, 300, 600]
+REFRESH_SECONDS = [0, 60, 120, 300, 600]
 
 REFRESH_LABELS = {
     "ko": {
         0: "끄기",
-        10: "10초",
-        30: "30초",
         60: "1분",
         120: "2분",
         300: "5분",
@@ -252,8 +250,6 @@ REFRESH_LABELS = {
     },
     "en": {
         0: "Off",
-        10: "10 seconds",
-        30: "30 seconds",
         60: "1 minute",
         120: "2 minutes",
         300: "5 minutes",
@@ -430,8 +426,8 @@ def get_dashboard_auto_refresh_seconds() -> int:
     if value == 0:
         return 0
 
-    if 0 < value < 10:
-        return 10
+    if 0 < value < 60:
+        return 60
 
     if value in REFRESH_SECONDS:
         return value

@@ -44,7 +44,7 @@ from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
-MIN_COLLECT_INTERVAL_SECONDS = 10.0
+MIN_COLLECT_INTERVAL_SECONDS = 60.0
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -515,7 +515,7 @@ def main() -> None:
         help=(
             "Repeat collection interval seconds. "
             "Implies --loop and overrides COLLECT_INTERVAL. "
-            "Minimum effective interval is 10 seconds."
+            "Minimum effective interval is 60 seconds."
         ),
     )
 
@@ -524,7 +524,7 @@ def main() -> None:
         action="store_true",
         help=(
             "Repeat collection using COLLECT_INTERVAL from the config file. "
-            "Minimum effective interval is 10 seconds."
+            "Minimum effective interval is 60 seconds."
         ),
     )
 

@@ -3,7 +3,7 @@
 #
 # [Optional] Repeat collection interval seconds.
 # [Optional] Used only with --loop. --interval overrides this value.
-# [Optional] Values below 10 seconds are clamped to 10 seconds.
+# [Optional] Values below 60 seconds are clamped to 60 seconds.
 COLLECT_INTERVAL="60"
 
 # [Optional] Python virtual environment path used by sample systemd units.
@@ -28,8 +28,8 @@ DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 # [Optional] Default auto-refresh selection in dashboard sidebar.
-# [Optional] Supported values: 0, 10, 30, 60, 120, 300, 600
-# [Optional] Values between 1 and 9 are clamped to 10.
+# [Optional] Supported values: 0, 60, 120, 300, 600
+# [Optional] Values between 1 and 59 are clamped to 60.
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
 # [Optional] Default time axis scale in dashboard sidebar.
 # [Optional] Supported values (case-insensitive): fixed, auto
