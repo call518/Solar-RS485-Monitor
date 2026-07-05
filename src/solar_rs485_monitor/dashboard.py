@@ -1786,6 +1786,14 @@ def render_area_echart(
         return
 
     gap_threshold = timedelta(minutes=30)
+    if len(chart_data) >= 2:
+        diffs = chart_data["timestamp"].diff().dropna()
+        positive_diffs = diffs[diffs > timedelta(0)]
+        if not positive_diffs.empty:
+            typical_gap_seconds = float(positive_diffs.median().total_seconds())
+            gap_threshold = timedelta(
+                seconds=max(1800.0, typical_gap_seconds * 1.5)
+            )
     points = []
     prev_ts = None
     for _, row in chart_data.iterrows():
