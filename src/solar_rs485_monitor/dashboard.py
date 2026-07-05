@@ -1604,6 +1604,7 @@ def format_snapshot_value(metric_name: str, value) -> str:
 def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> None:
     metric_order = [
         "total_generation_kwh",
+        "fault_code",
         "input_dc_power_w",
         "output_ac_power_w",
         "input_dc_voltage_v",
@@ -1612,7 +1613,6 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
         "output_ac_current_a",
         "output_ac_power_factor_pct",
         "output_ac_frequency_hz",
-        "fault_code",
     ]
     items = []
 
@@ -1634,7 +1634,7 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
         <style>
           .latest-metric-grid {{
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+                        grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 1.1rem 2rem;
             margin-top: 0.5rem;
             margin-bottom: 1.5rem;
