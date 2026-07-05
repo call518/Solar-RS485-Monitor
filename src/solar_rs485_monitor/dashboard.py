@@ -1664,7 +1664,11 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
           }}
           @media (max-width: 640px) {{
             .latest-metric-grid {{
-              grid-template-columns: 1fr;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 0.9rem 1rem;
+                        }}
+                        .latest-metric-value {{
+                            font-size: 1.55rem;
             }}
           }}
         </style>
