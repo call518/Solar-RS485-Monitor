@@ -35,6 +35,7 @@ CONFIG_FILENAME = "solar-rs485-monitor.conf"
 DEFAULT_DASHBOARD_TITLE = "Solar RS485 Monitor"
 DEFAULT_DASHBOARD_LANGUAGE = "ko"
 DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
+DEFAULT_DASHBOARD_MAX_POINTS = 10000
 DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
 DEFAULT_DASHBOARD_RANGE = "Last 2 days"
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
@@ -437,6 +438,20 @@ def get_dashboard_auto_refresh_seconds() -> int:
         return value
 
     return DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS
+
+
+def get_dashboard_max_points() -> int:
+    raw = os.getenv(
+        "DASHBOARD_MAX_POINTS",
+        str(DEFAULT_DASHBOARD_MAX_POINTS),
+    ).strip()
+
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_DASHBOARD_MAX_POINTS
+
+    return min(300000, max(100, value))
 
 
 def get_dashboard_time_axis_mode() -> str:
@@ -1108,6 +1123,25 @@ def get_time_bounds(
         return start_local.astimezone(timezone.utc), now_utc
 
     return now_utc - RANGES[range_name], now_utc
+
+
+def get_min_bucket_seconds_for_range(
+    range_name: str,
+    display_timezone: ZoneInfo,
+    max_points: int,
+) -> int:
+    since, until = get_time_bounds(range_name, display_timezone)
+    duration_seconds = max(
+        1.0,
+        (until.astimezone(timezone.utc) - since.astimezone(timezone.utc)).total_seconds(),
+    )
+    required_bucket_seconds = int(math.ceil(duration_seconds / max(1, max_points)))
+
+    for bucket in BUCKET_SECONDS:
+        if bucket >= required_bucket_seconds:
+            return bucket
+
+    return BUCKET_SECONDS[-1]
 
 
 def normalize_timestamp_value(value):
@@ -3128,6 +3162,16 @@ def run_app() -> None:
             format_func=lambda value: RANGE_LABELS[lang][value],
         )
 
+        dashboard_max_points = get_dashboard_max_points()
+        min_bucket_seconds = get_min_bucket_seconds_for_range(
+            range_name=range_name,
+            display_timezone=display_timezone,
+            max_points=dashboard_max_points,
+        )
+        bucket_options = [
+            bucket for bucket in BUCKET_SECONDS if bucket >= min_bucket_seconds
+        ]
+
         if "dashboard_bucket_seconds" not in st.session_state:
             query_bucket_seconds = get_query_param("bucket")
             default_bucket_seconds = 600
@@ -3136,35 +3180,23 @@ def run_app() -> None:
                     parsed_bucket_seconds = int(query_bucket_seconds)
                 except ValueError:
                     parsed_bucket_seconds = 600
-                if parsed_bucket_seconds in BUCKET_SECONDS:
+                if parsed_bucket_seconds in bucket_options:
                     default_bucket_seconds = parsed_bucket_seconds
+            if default_bucket_seconds < min_bucket_seconds:
+                default_bucket_seconds = min_bucket_seconds
             st.session_state["dashboard_bucket_seconds"] = default_bucket_seconds
+
+        if st.session_state["dashboard_bucket_seconds"] < min_bucket_seconds:
+            st.session_state["dashboard_bucket_seconds"] = min_bucket_seconds
 
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],
-            BUCKET_SECONDS,
+            bucket_options,
             key="dashboard_bucket_seconds",
             format_func=lambda value: BUCKET_LABELS[lang][value],
         )
 
-        if "dashboard_limit" not in st.session_state:
-            query_limit = get_query_param("limit")
-            default_limit = 50000
-            if query_limit is not None:
-                try:
-                    parsed_limit = int(query_limit)
-                except ValueError:
-                    parsed_limit = default_limit
-                default_limit = min(300000, max(100, parsed_limit))
-            st.session_state["dashboard_limit"] = default_limit
-
-        limit = st.number_input(
-            text["max_points"],
-            min_value=100,
-            max_value=300000,
-            key="dashboard_limit",
-            step=1000,
-        )
+        limit = dashboard_max_points
         st.caption(
             text["aggregate_caption"].format(
                 bucket=BUCKET_LABELS[lang][bucket_seconds],
@@ -3210,7 +3242,6 @@ def run_app() -> None:
                 "lang": lang,
                 "range": range_name,
                 "bucket": str(bucket_seconds),
-                "limit": str(int(limit)),
                 "refresh": str(refresh_seconds),
                 "axis": axis_mode,
             }
