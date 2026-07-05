@@ -244,6 +244,7 @@ DASHBOARD_SERVER_HEADLESS="true"
 DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
+DASHBOARD_MAX_POINTS="10000"
 DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
@@ -261,13 +262,15 @@ ALERT_CHANNELS=""
 
 상단 상태 배지는 `fault_code`의 Bit 0(인버터 동작유무)로 `대기(STANDBY)`를 판정합니다. 장애 판정은 Bit 1+를 기준으로 하며, Bit 1+ 중 하나라도 활성화되면 `장애`, 그렇지 않고 Bit 0이 `1`이면 `STANDBY`, Bit 0이 `0`이면 `정상`으로 표시합니다.
 
-`DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `10`, `30`, `60`, `120`, `300`, `600`이며, 안전을 위해 `1`~`9`를 설정하면 `10`으로 보정됩니다.
+`DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `60`, `120`, `300`, `600`이며, 안전을 위해 `1`~`59`를 설정하면 `60`으로 보정됩니다.
+
+`DASHBOARD_MAX_POINTS`는 차트 조회 시 사용할 최대 집계 포인트 수를 지정합니다. 이 값은 설정 파일에서만 변경할 수 있으며(대시보드 UI에서 직접 변경 불가), 허용 범위는 `100..300000`, 기본값은 `10000`입니다.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 
 `DASHBOARD_AUTH_ENABLED`는 내장 대시보드 로그인을 활성화합니다. `DASHBOARD_AUTH_USERS`에는 `solar-rs485-monitor-dashboard --hash-password`로 생성한 `username:password_hash` 항목을 comma-separated 형식으로 저장합니다. `DASHBOARD_AUTH_COOKIE_SECRET`은 브라우저 로그인 쿠키 서명에 사용하며, `DASHBOARD_AUTH_COOKIE_MAX_AGE_SECONDS`는 일반 로그인 유지 시간을 제어합니다. `DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS`에는 장기 유지 쿠키를 적용할 사용자명을 comma-separated 형식으로 지정합니다. 이 값을 비워도 하위 호환을 위해 `admin`은 persistent user로 동작합니다.
 
-`COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다. 과도한 수집을 줄이기 위해 10초보다 작은 값은 10초로 보정됩니다.
+`COLLECT_INTERVAL`은 `--loop`가 주어졌을 때만 사용하는 기본 반복 수집 간격입니다. 명령행의 `--interval` 값은 loop mode를 의미하며 항상 `COLLECT_INTERVAL`보다 우선합니다. 과도한 수집을 줄이기 위해 60초보다 작은 값은 60초로 보정됩니다.
 
 `PYTHON_VENV_PATH`는 샘플 systemd unit에서 collector와 dashboard 실행 전에 `PATH` 앞에 `${PYTHON_VENV_PATH}/bin`을 추가할 때 사용합니다.
 
@@ -591,7 +594,7 @@ solar-rs485-monitor-dashboard --version
 
 브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스와 최대 6개월까지의 조회 기간을 선택할 수 있습니다.
 
-대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 10초, 30초, 1분, 2분, 5분, 10분, 15분, 30분 단위로 집계됩니다.
+대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 단위로 집계됩니다. 또한 선택한 조회 범위와 `DASHBOARD_MAX_POINTS` 값에 따라 선택 가능한 최소 집계 단위가 동적으로 상향됩니다.
 
 대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 사이드바 자동 새로고침 기본 선택값은 `DASHBOARD_AUTO_REFRESH_SECONDS`로 지정할 수 있고, 실행 중에는 사용자가 사이드바에서 다시 변경할 수 있습니다. 선택된 간격은 브라우저 페이지 전체를 reload하지 않고 대시보드 본문 영역을 갱신합니다. 명령행에서 Streamlit 서버 옵션을 override하려면:
 
@@ -802,10 +805,14 @@ POST /solar-rs485-monitor/_doc
 
 ```env
 GOOGLE_SHEET_FILE_NAME="YOUR_GOOGLE_SHEET_FILE_NAME"
-GOOGLE_WORKSHEET_NAME="YOUR_GOOGLE_SHEET_NAME"
+GOOGLE_WORKSHEET_NAME=""
 ```
 
-`GOOGLE_WORKSHEET_NAME`은 `strftime` 패턴을 지원합니다. 예를 들어 월별 탭 분리를 원하면 `"%Y-%m"`로 설정하면 되고, 수집 시점에 맞춰 `2026-06`, `2026-07` 같은 워크시트 이름으로 자동 기록됩니다. 해당 월 워크시트가 없으면 자동 생성됩니다.
+`GOOGLE_SHEET_FILE_NAME`은 베이스 이름으로 사용됩니다. 실행 시에는 `<GOOGLE_SHEET_FILE_NAME>-YYYY` 형식의 연도별 스프레드시트(예: `Solar-RS485-Monitor-2026`)에 자동 기록합니다.
+
+각 연도 스프레드시트 안에서는 `YYYY-01`부터 `YYYY-12`까지 월별 워크시트를 자동으로 관리합니다. 없는 월 워크시트는 자동 생성되며, 데이터는 수집 시점의 월에 해당하는 워크시트에 기록됩니다.
+
+`GOOGLE_WORKSHEET_NAME`은 하위 호환을 위해 남아 있으며, 현재는 워크시트 회전 제어에 사용되지 않습니다.
 
 또한 `solar-rs485-monitor.conf.template`에 있는 Google 서비스 계정 필드도 입력해야 합니다.
 
