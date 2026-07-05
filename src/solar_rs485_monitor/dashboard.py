@@ -6,6 +6,7 @@ import hmac
 import json
 import math
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -307,6 +308,12 @@ AREA_CHART_COLORS = {
     "output_ac_frequency_hz": "#6366f1",
 }
 
+GENERATION_CHART_COLORS = {
+    "daily_generation": "#0891b2",
+    "monthly_generation": "#0284c7",
+    "yearly_generation": "#0f766e",
+}
+
 RANGES = {
     "Last 1 hour": timedelta(hours=1),
     "Last 6 hours": timedelta(hours=6),
@@ -448,6 +455,37 @@ def get_dashboard_default_range() -> str:
         return raw
 
     return DEFAULT_DASHBOARD_RANGE
+
+
+RGB_COLOR_RE = re.compile(
+    r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$",
+    re.IGNORECASE,
+)
+
+
+def normalize_chart_color(value: str, fallback: str) -> str:
+    color = value.strip()
+    if not color:
+        return fallback
+
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", color) or re.fullmatch(r"#[0-9a-fA-F]{3}", color):
+        return color
+
+    rgb_match = RGB_COLOR_RE.fullmatch(color)
+    if rgb_match is None:
+        return fallback
+
+    red, green, blue = (int(channel) for channel in rgb_match.groups())
+    if any(channel < 0 or channel > 255 for channel in (red, green, blue)):
+        return fallback
+
+    return f"rgb({red}, {green}, {blue})"
+
+
+def get_chart_color(chart_name: str, fallback: str) -> str:
+    env_name = f"DASHBOARD_CHART_COLOR_{chart_name.upper()}"
+    raw = os.getenv(env_name, "")
+    return normalize_chart_color(raw, fallback)
 
 
 def is_operation_stopped(fault_code: int) -> bool:
@@ -1773,7 +1811,7 @@ def render_area_echart(
         x_axis["min"] = since.isoformat()
         x_axis["max"] = until.isoformat()
 
-    color = AREA_CHART_COLORS.get(metric_name, "#3b82f6")
+    color = get_chart_color(metric_name, AREA_CHART_COLORS.get(metric_name, "#3b82f6"))
     latest_timestamp = chart_data["timestamp"].max().isoformat()
     latest_value = float(chart_data["value"].iloc[-1])
     chart_key = (
@@ -1913,7 +1951,12 @@ def render_total_generation_echart(
                 "name": metric_label,
                 "type": "bar",
                 "barMaxWidth": 18,
-                "itemStyle": {"color": BAR_CHART_COLORS["total_generation_kwh"]},
+                "itemStyle": {
+                    "color": get_chart_color(
+                        "total_generation_kwh",
+                        BAR_CHART_COLORS["total_generation_kwh"],
+                    )
+                },
                 "data": points,
             }
         ],
@@ -1938,7 +1981,7 @@ def render_bar_chart(
 ) -> None:
     from streamlit_echarts import st_echarts
 
-    color = BAR_CHART_COLORS.get(metric_name, "#16a34a")
+    color = get_chart_color(metric_name, BAR_CHART_COLORS.get(metric_name, "#16a34a"))
     chart_data = (
         chart_df[[metric_name]]
         .reset_index()
@@ -2550,7 +2593,12 @@ def render_daily_generation_chart(
                 "type": "bar",
                 "barMaxWidth": 42,
                 "barMinWidth": 16,
-                "itemStyle": {"color": "#0891b2"},
+                "itemStyle": {
+                    "color": get_chart_color(
+                        "daily_generation",
+                        GENERATION_CHART_COLORS["daily_generation"],
+                    )
+                },
                 "data": values,
             }
         ],
@@ -2890,7 +2938,10 @@ def render_dashboard_body(
                                     period_df=monthly_df,
                                     title=text["monthly_generation_chart"],
                                     chart_key_prefix="echart_monthly_generation",
-                                    color="#0284c7",
+                                    color=get_chart_color(
+                                        "monthly_generation",
+                                        GENERATION_CHART_COLORS["monthly_generation"],
+                                    ),
                                 )
 
                         with yearly_col:
@@ -2906,7 +2957,10 @@ def render_dashboard_body(
                                     period_df=yearly_df,
                                     title=text["yearly_generation_chart"],
                                     chart_key_prefix="echart_yearly_generation",
-                                    color="#0f766e",
+                                    color=get_chart_color(
+                                        "yearly_generation",
+                                        GENERATION_CHART_COLORS["yearly_generation"],
+                                    ),
                                 )
 
                         if daily_df.empty:
