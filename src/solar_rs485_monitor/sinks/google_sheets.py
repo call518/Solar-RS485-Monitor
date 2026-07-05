@@ -27,7 +27,6 @@ _google_spreadsheet = None
 _cached_spreadsheet_name = None
 _cached_worksheet_name = None
 _cached_worksheet = None
-_cached_yearly_ensure_key = None
 
 
 def get_google_sheet_file_name() -> str:
@@ -192,18 +191,11 @@ def ensure_yearly_monthly_worksheets(
 def get_google_sheet(reference_time: datetime | None = None):
     global _cached_worksheet
     global _cached_worksheet_name
-    global _cached_yearly_ensure_key
 
     ts = resolve_reference_time(reference_time)
     worksheet_name = resolve_worksheet_name(reference_time)
-    spreadsheet_name = resolve_spreadsheet_name(reference_time)
-    yearly_ensure_key = f"{spreadsheet_name}:{ts.year}"
 
-    if (
-        _cached_worksheet is not None
-        and _cached_worksheet_name == worksheet_name
-        and _cached_yearly_ensure_key == yearly_ensure_key
-    ):
+    if _cached_worksheet is not None and _cached_worksheet_name == worksheet_name:
         return _cached_worksheet
 
     try:
@@ -216,7 +208,6 @@ def get_google_sheet(reference_time: datetime | None = None):
         )
         _cached_worksheet = worksheet
         _cached_worksheet_name = worksheet_name
-        _cached_yearly_ensure_key = yearly_ensure_key
         return worksheet
 
     except APIError as e:
