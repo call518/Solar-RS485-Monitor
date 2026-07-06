@@ -64,6 +64,12 @@ METRICS = {
     "fault_code": "Fault code",
 }
 
+GENERATION_SNAPSHOT_METRICS = {
+    "daily_generation_kwh": "Daily generation (kWh)",
+    "monthly_generation_kwh": "Monthly generation (kWh)",
+    "yearly_generation_kwh": "Yearly generation (kWh)",
+}
+
 METRIC_LABELS = {
     "ko": {
         "input_dc_voltage_v": "DC 입력 전압 (V)",
@@ -75,9 +81,15 @@ METRIC_LABELS = {
         "output_ac_power_factor_pct": "AC 출력 역률 (%)",
         "output_ac_frequency_hz": "AC 출력 주파수 (Hz)",
         "total_generation_kwh": "누적 발전량 (kWh)",
+        "daily_generation_kwh": "일일 발전량 (kWh)",
+        "monthly_generation_kwh": "월간 발전량 (kWh)",
+        "yearly_generation_kwh": "연간 발전량 (kWh)",
         "fault_code": "점검 코드",
     },
-    "en": METRICS,
+    "en": {
+        **METRICS,
+        **GENERATION_SNAPSHOT_METRICS,
+    },
 }
 
 UI_TEXT = {
@@ -1621,7 +1633,12 @@ def format_snapshot_value(metric_name: str, value) -> str:
     if metric_name in {"fault_code", "inverter_id"}:
         return str(int(round(numeric)))
 
-    if metric_name == "total_generation_kwh":
+    if metric_name in {
+        "total_generation_kwh",
+        "daily_generation_kwh",
+        "monthly_generation_kwh",
+        "yearly_generation_kwh",
+    }:
         return f"{numeric:.3f}"
 
     if metric_name in {
@@ -1635,10 +1652,17 @@ def format_snapshot_value(metric_name: str, value) -> str:
     return f"{numeric:.1f}"
 
 
-def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> None:
+def render_latest_metric_board(
+    st,
+    latest,
+    metric_labels: dict[str, str],
+    generation_snapshot: dict[str, float] | None = None,
+) -> None:
     metric_order = [
         "total_generation_kwh",
-        "fault_code",
+        "daily_generation_kwh",
+        "monthly_generation_kwh",
+        "yearly_generation_kwh",
         "input_dc_power_w",
         "output_ac_power_w",
         "input_dc_voltage_v",
@@ -1647,12 +1671,19 @@ def render_latest_metric_board(st, latest, metric_labels: dict[str, str]) -> Non
         "output_ac_current_a",
         "output_ac_power_factor_pct",
         "output_ac_frequency_hz",
+        "fault_code",
     ]
     items = []
+    generation_snapshot = generation_snapshot or {}
 
     for metric_name in metric_order:
         label = metric_labels.get(metric_name, metric_name)
-        value = format_snapshot_value(metric_name, latest.get(metric_name))
+        raw_value = (
+            generation_snapshot.get(metric_name)
+            if metric_name in generation_snapshot
+            else latest.get(metric_name)
+        )
+        value = format_snapshot_value(metric_name, raw_value)
         items.append(f"""
         <div class="latest-metric">
           <div class="latest-metric-label">{html.escape(label)}</div>
@@ -2502,6 +2533,95 @@ def read_daily_generation(
     )
 
 
+def coerce_utc_datetime(value) -> datetime:
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    elif not isinstance(value, datetime):
+        value = datetime.fromisoformat(str(value))
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc)
+
+
+def build_generation_snapshot(
+    daily_df,
+    latest_timestamp,
+    display_timezone: ZoneInfo,
+) -> dict[str, float]:
+    latest_utc = coerce_utc_datetime(latest_timestamp)
+    latest_local = latest_utc.astimezone(display_timezone)
+
+    if daily_df.empty:
+        return {}
+
+    monthly_df = aggregate_generation_by_period(
+        daily_df=daily_df,
+        display_timezone=display_timezone,
+        period="month",
+    )
+    yearly_df = aggregate_generation_by_period(
+        daily_df=daily_df,
+        display_timezone=display_timezone,
+        period="year",
+    )
+
+    current_day = latest_local.strftime("%Y-%m-%d")
+    current_month = latest_local.strftime("%Y-%m")
+    current_year = latest_local.strftime("%Y")
+
+    daily_values: dict[str, float] = {}
+    for _, row in daily_df.iterrows():
+        timestamp = row["timestamp"]
+        if hasattr(timestamp, "to_pydatetime"):
+            timestamp = timestamp.to_pydatetime()
+        if not isinstance(timestamp, datetime):
+            continue
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+        label = timestamp.astimezone(display_timezone).strftime("%Y-%m-%d")
+        daily_values[label] = daily_values.get(label, 0.0) + float(row["value"])
+
+    monthly_values = {
+        str(row["label"]): float(row["value"])
+        for _, row in monthly_df.iterrows()
+    }
+    yearly_values = {
+        str(row["label"]): float(row["value"])
+        for _, row in yearly_df.iterrows()
+    }
+
+    return {
+        "daily_generation_kwh": daily_values.get(current_day, 0.0),
+        "monthly_generation_kwh": monthly_values.get(current_month, 0.0),
+        "yearly_generation_kwh": yearly_values.get(current_year, 0.0),
+    }
+
+
+def filter_daily_generation_by_range(
+    daily_df,
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+):
+    if daily_df.empty:
+        return daily_df
+
+    filtered_df = daily_df.copy()
+    filtered_df["timestamp"] = filtered_df["timestamp"].map(coerce_utc_datetime)
+    since_date = since.astimezone(display_timezone).date()
+    until_date = until.astimezone(display_timezone).date()
+    local_dates = filtered_df["timestamp"].map(
+        lambda value: value.astimezone(display_timezone).date()
+    )
+    return filtered_df[
+        (local_dates >= since_date)
+        & (local_dates <= until_date)
+    ]
+
+
 def render_fault_events_table(
     st,
     fault_events_df,
@@ -2806,6 +2926,27 @@ def render_dashboard_body(
         return
 
     latest = df.sort_values("timestamp").iloc[-1]
+    latest_utc = coerce_utc_datetime(latest["timestamp"])
+    latest_local = latest_utc.astimezone(display_timezone)
+    latest_year_start = datetime(
+        latest_local.year,
+        1,
+        1,
+        tzinfo=display_timezone,
+    ).astimezone(timezone.utc)
+    generation_since = min(since.astimezone(timezone.utc), latest_year_start)
+    daily_generation_df = None
+    daily_generation_error = None
+
+    try:
+        daily_generation_df = read_daily_generation(
+            source=source,
+            since=generation_since,
+            until=until,
+            display_timezone=display_timezone,
+        )
+    except Exception as e:
+        daily_generation_error = e
 
     status_sample = latest
     try:
@@ -2904,7 +3045,20 @@ def render_dashboard_body(
 
     st.markdown('<div style="height: 1.25rem;"></div>', unsafe_allow_html=True)
     st.subheader(text["latest_snapshot"])
-    render_latest_metric_board(st, latest, metric_labels)
+    if daily_generation_df is not None:
+        generation_snapshot = build_generation_snapshot(
+            daily_df=daily_generation_df,
+            latest_timestamp=latest["timestamp"],
+            display_timezone=display_timezone,
+        )
+    else:
+        generation_snapshot = {}
+    render_latest_metric_board(
+        st,
+        latest,
+        metric_labels,
+        generation_snapshot=generation_snapshot,
+    )
 
     chart_df = df.sort_values("timestamp").set_index("timestamp")
 
@@ -2937,16 +3091,15 @@ def render_dashboard_body(
                 )
 
             if metric_name == "total_generation_kwh":
-                try:
-                    daily_df = read_daily_generation(
-                        source=source,
+                if daily_generation_error is not None:
+                    st.warning(str(daily_generation_error))
+                else:
+                    daily_df = filter_daily_generation_by_range(
+                        daily_generation_df,
                         since=since,
                         until=until,
                         display_timezone=display_timezone,
                     )
-                except Exception as e:
-                    st.warning(str(e))
-                else:
                     if daily_df.empty and not fixed_time_axis:
                         st.caption(text["daily_generation_empty"])
                     else:
