@@ -27,6 +27,10 @@ from solar_rs485_monitor.sinks.opensearch import (
     get_opensearch_config,
     write_to_opensearch,
 )
+from solar_rs485_monitor.sinks.supabase import (
+    get_supabase_config,
+    write_to_supabase,
+)
 from solar_rs485_monitor.sinks.sqlite import (
     get_sqlite_config,
     write_to_sqlite,
@@ -118,6 +122,9 @@ def parse_collector_sinks(value: str) -> set[str]:
         "thingspeak": "thingspeak",
         "mariadb": "mariadb",
         "mysql": "mariadb",
+        "supabase": "supabase",
+        "postgres": "supabase",
+        "postgresql": "supabase",
         "sqlite": "sqlite",
         "opensearch": "opensearch",
         "elasticsearch": "opensearch",
@@ -158,6 +165,7 @@ def has_cli_sink_flags(args: argparse.Namespace) -> bool:
             args.google_sheet,
             args.thingspeak,
             args.mariadb,
+            args.supabase,
             args.sqlite,
             args.opensearch,
             args.all_sinks,
@@ -182,6 +190,7 @@ def apply_sink_selection(args: argparse.Namespace) -> None:
     args.google_sheet = "google_sheet" in sinks
     args.thingspeak = "thingspeak" in sinks
     args.mariadb = "mariadb" in sinks
+    args.supabase = "supabase" in sinks
     args.sqlite = "sqlite" in sinks
     args.opensearch = "opensearch" in sinks
 
@@ -559,6 +568,12 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--supabase",
+        action="store_true",
+        help="Write collected data to Supabase PostgreSQL",
+    )
+
+    parser.add_argument(
         "--opensearch",
         action="store_true",
         help="Write collected data to OpenSearch or Elasticsearch",
@@ -604,6 +619,7 @@ def main() -> None:
         args.google_sheet = True
         args.thingspeak = True
         args.mariadb = True
+        args.supabase = True
         args.sqlite = True
         args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
 
@@ -640,6 +656,17 @@ def main() -> None:
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="sqlite",
+                error=RuntimeError(f"initialization failed: {e}"),
+            )
+
+    supabase_config = None
+    if args.supabase:
+        try:
+            supabase_config = get_supabase_config()
+        except Exception as e:
+            print_sink_error(
+                inverter_name=inverter_name,
+                sink="supabase",
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
@@ -788,6 +815,29 @@ def main() -> None:
                     print_sink_error(
                         inverter_name=inverter_name,
                         sink="opensearch",
+                        error=e,
+                    )
+
+            if supabase_config is not None:
+                try:
+                    supabase_insert_id = write_to_supabase(
+                        data=result,
+                        config=supabase_config,
+                    )
+                    print_section_json("[Sink] Supabase", {
+                        **timestamp_fields(),
+                        "inverter_name": inverter_name,
+                        "sink": "supabase",
+                        "supabase_table": (
+                            f"{supabase_config['schema']}."
+                            f"{supabase_config['table']}"
+                        ),
+                        "supabase_insert_id": supabase_insert_id,
+                    })
+                except Exception as e:
+                    print_sink_error(
+                        inverter_name=inverter_name,
+                        sink="supabase",
                         error=e,
                     )
 

@@ -90,6 +90,36 @@ def build_row(data: dict) -> list:
     return [values[column] for column in INSERT_COLUMNS]
 
 
+def ensure_mariadb_table(connection, table: str) -> None:
+    safe_table = require_identifier(table, "table")
+
+    create_table_sql = f"""
+        CREATE TABLE IF NOT EXISTS `{safe_table}` (
+            `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `timestamp` DATETIME(6) NOT NULL,
+            `inverter_name` VARCHAR(100) NOT NULL,
+            `inverter_id` TINYINT UNSIGNED NOT NULL,
+            `input_dc_voltage_v` SMALLINT UNSIGNED,
+            `input_dc_current_a` FLOAT(5,2),
+            `input_dc_power_w` INT UNSIGNED,
+            `output_ac_voltage_v` SMALLINT UNSIGNED,
+            `output_ac_current_a` FLOAT(5,2),
+            `output_ac_power_w` INT UNSIGNED,
+            `output_ac_power_factor_pct` FLOAT(5,2),
+            `output_ac_frequency_hz` FLOAT(5,2),
+            `total_generation_kwh` FLOAT(10,3),
+            `fault_code` SMALLINT UNSIGNED DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_{safe_table}_timestamp` (`timestamp`),
+            INDEX `idx_{safe_table}_inverter_id` (`inverter_id`),
+            INDEX `idx_{safe_table}_fault_code` (`fault_code`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(create_table_sql)
+
+
 def write_to_mariadb(data: dict, config: dict) -> int:
     try:
         import pymysql
@@ -116,6 +146,8 @@ def write_to_mariadb(data: dict, config: dict) -> int:
         autocommit=True,
         connect_timeout=config["connect_timeout"],
     ) as connection:
+        ensure_mariadb_table(connection, table)
+
         with connection.cursor() as cursor:
             cursor.execute(sql, build_row(data))
             return cursor.lastrowid

@@ -690,11 +690,13 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 ```
 
-MariaDB sink는 현재 수집 메트릭과 일치하는 컬럼을 가진 `inverter_log` 테이블이 이미 존재한다고 가정합니다. 테이블 스키마에 정의된 파싱 메트릭만 insert하며, `raw_frame_hex`는 디버깅용 JSON 출력에는 포함되지만 MariaDB에는 저장하지 않습니다. 저장하려면 테이블과 sink를 함께 확장해야 합니다.
+MariaDB sink는 대상 테이블이 없으면 자동으로 생성하며, timestamp/inverter_id/fault_code 인덱스도 함께 생성합니다. 현재 sink 스키마에 정의된 파싱 메트릭만 insert하며, `raw_frame_hex`는 디버깅용 JSON 출력에는 포함되지만 MariaDB에는 저장하지 않습니다. 저장하려면 테이블과 sink를 함께 확장해야 합니다.
+
+단, 선택한 데이터베이스 자체는 미리 존재해야 하며 최초 실행 시 테이블/인덱스 생성 권한이 필요합니다.
 
 일반 로깅에는 데이터베이스 사용자에게 `INSERT` 권한만 있으면 됩니다. `SELECT` 권한은 검증이나 대시보드 구성에 유용합니다.
 
-MariaDB 스키마와 로깅 사용자 생성 예시:
+MariaDB 스키마와 로깅 사용자 생성 예시(선택적 사전 준비):
 
 ```sql
 CREATE DATABASE IF NOT EXISTS solar_rs485_monitor

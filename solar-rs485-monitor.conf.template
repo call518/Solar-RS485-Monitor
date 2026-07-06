@@ -11,7 +11,7 @@ PYTHON_VENV_PATH="/opt/myapp/.venv"
 
 # [Sink][Optional] Default collector sinks used only when no sink CLI flags are provided.
 # [Sink][Optional] Leave empty for measurement-only collection.
-# [Sink][Optional] Supported values: all, google_sheet, thingspeak, mariadb, sqlite, opensearch
+# [Sink][Optional] Supported values: all, google_sheet, thingspeak, mariadb, supabase, sqlite, opensearch
 # [Sink][Optional] Multiple sinks can be comma-separated, for example: mariadb,thingspeak
 COLLECTOR_SINKS=""
 
@@ -140,6 +140,20 @@ MARIADB_PASSWORD="YOUR_MARIADB_PASSWORD"
 MARIADB_DATABASE="solar_rs485_monitor"
 MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
+
+#
+# [Sink][Optional] Supabase (PostgreSQL)
+# [Sink][Optional] If Direct Connection requires IPv6 on your network,
+# [Sink][Optional] use the Supabase Session Pooler host and pooler username.
+#
+SUPABASE_HOST="YOUR_SUPABASE_HOST"
+SUPABASE_PORT="5432"
+SUPABASE_USER="YOUR_SUPABASE_USERNAME"
+SUPABASE_PASSWORD="YOUR_SUPABASE_PASSWORD"
+SUPABASE_DATABASE="postgres"
+SUPABASE_SCHEMA="public"
+SUPABASE_TABLE="inverter_log"
+SUPABASE_CONNECT_TIMEOUT="5.0"
 
 #
 # [Sink][Optional] SQLite

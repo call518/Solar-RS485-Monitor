@@ -692,11 +692,13 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 ```
 
-The sink expects the `inverter_log` table to already exist with columns matching the current collected metrics. It inserts only the parsed metric fields defined by the table schema; `raw_frame_hex` is printed in JSON for debugging but is not stored in MariaDB unless the table and sink are extended.
+The MariaDB sink now creates the target table automatically when it does not exist, including timestamp, inverter_id, and fault_code indexes. It inserts only the parsed metric fields defined by the current sink schema; `raw_frame_hex` is printed in JSON for debugging but is not stored in MariaDB unless the table and sink are extended.
+
+The selected database must already exist and the logging user needs permissions to create tables and indexes on first run.
 
 The database user only needs `INSERT` for normal logging. `SELECT` can be useful for verification and dashboards.
 
-Example MariaDB schema and logging user:
+Example MariaDB schema and logging user (optional pre-provisioning):
 
 ```sql
 CREATE DATABASE IF NOT EXISTS solar_rs485_monitor
