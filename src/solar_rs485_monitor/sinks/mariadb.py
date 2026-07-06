@@ -120,6 +120,14 @@ def ensure_mariadb_table(connection, table: str) -> None:
         cursor.execute(create_table_sql)
 
 
+def get_mariadb_error_code(error: Exception) -> int | None:
+    args = getattr(error, "args", ())
+    if args and isinstance(args[0], int):
+        return args[0]
+
+    return None
+
+
 def write_to_mariadb(data: dict, config: dict) -> int:
     try:
         import pymysql
@@ -136,6 +144,11 @@ def write_to_mariadb(data: dict, config: dict) -> int:
     placeholders = ", ".join(["%s"] * len(INSERT_COLUMNS))
     sql = f"INSERT INTO `{table}` ({columns}) VALUES ({placeholders})"
 
+    def insert_row(connection) -> int:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, build_row(data))
+            return cursor.lastrowid
+
     with pymysql.connect(
         host=config["host"],
         port=config["port"],
@@ -146,8 +159,18 @@ def write_to_mariadb(data: dict, config: dict) -> int:
         autocommit=True,
         connect_timeout=config["connect_timeout"],
     ) as connection:
-        ensure_mariadb_table(connection, table)
+        try:
+            ensure_mariadb_table(connection, table)
+        except pymysql.MySQLError as ensure_error:
+            try:
+                return insert_row(connection)
+            except pymysql.MySQLError as insert_error:
+                if get_mariadb_error_code(insert_error) == 1146:
+                    raise RuntimeError(
+                        "MariaDB table does not exist and automatic table "
+                        f"creation failed: {ensure_error}"
+                    ) from insert_error
 
-        with connection.cursor() as cursor:
-            cursor.execute(sql, build_row(data))
-            return cursor.lastrowid
+                raise
+
+        return insert_row(connection)
