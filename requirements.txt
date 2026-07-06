@@ -50,7 +50,8 @@ pillow==12.3.0
 platformdirs==4.10.0
 pre_commit==4.6.0
 protobuf==7.35.1
-psycopg2-binary==2.9.12
+psycopg==3.3.4
+psycopg-binary==3.3.4
 pyarrow==24.0.0
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
