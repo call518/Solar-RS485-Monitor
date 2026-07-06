@@ -6,7 +6,7 @@ The collector reads inverter data, prints the parsed result as JSON, and can opt
 
 The current parser and protocol defaults are validated for InoElectric IEPVS-3.5-G1/G2.
 
-Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, and OpenSearch or Elasticsearch, while handling alert delivery separately.
+Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, Supabase (PostgreSQL), and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
 ## Start Here
 
@@ -448,6 +448,12 @@ Write collected data to MariaDB:
 solar-rs485-monitor --mariadb
 ```
 
+Write collected data to Supabase (PostgreSQL):
+
+```bash
+solar-rs485-monitor --supabase
+```
+
 Write collected data to SQLite:
 
 ```bash
@@ -499,7 +505,7 @@ solar-rs485-monitor --interval 60 --opensearch
 Multiple sinks can be enabled together:
 
 ```bash
-solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb --opensearch
+solar-rs485-monitor --interval 60 --sqlite --google-sheet --thingspeak --mariadb --supabase --opensearch
 ```
 
 Or enable every configured sink with one option:
@@ -508,7 +514,7 @@ Or enable every configured sink with one option:
 solar-rs485-monitor --loop --all-sinks
 ```
 
-With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, and MariaDB are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing configuration to be reported as an error.
+With `--all-sinks`, SQLite, Google Sheets, ThingSpeak, MariaDB, and Supabase are enabled. OpenSearch is enabled only when `OPENSEARCH_URL` is set. Use `--opensearch` explicitly if you want missing configuration to be reported as an error.
 
 Or enable every configured alert channel with one option:
 
@@ -738,6 +744,69 @@ FLUSH PRIVILEGES;
 
 The `%` host allows remote access from any IP. For production, restrict it to the collector host IP whenever possible.
 
+## Supabase (PostgreSQL) Configuration
+
+To use `--supabase`, configure these values in `solar-rs485-monitor.conf`:
+
+```env
+SUPABASE_HOST="YOUR_SUPABASE_HOST"
+SUPABASE_PORT="5432"
+SUPABASE_USER="YOUR_SUPABASE_USER"
+SUPABASE_PASSWORD="YOUR_SUPABASE_PASSWORD"
+SUPABASE_DATABASE="postgres"
+SUPABASE_SCHEMA="public"
+SUPABASE_TABLE="inverter_log"
+SUPABASE_CONNECT_TIMEOUT="5.0"
+```
+
+Notes:
+
+- If the Direct Connection for your Supabase project requires IPv6, IPv4-only clients must use the Session Pooler. In that case, use the pooler host and pooler username. Example:
+  - host: `aws-1-<region>.pooler.supabase.com` (e.g. `aws-1-ap-northeast-2.pooler.supabase.com`)
+  - user: `postgres.<project_ref>` (e.g. `postgres.jupglvkymeilpprzjxmv`)
+  - database: `postgres`
+  - port: `5432`
+- The Supabase sink automatically creates the target schema, table, and indexes if they do not exist. It inserts all parsed metrics including `raw_frame_hex`.
+- The database itself must already exist (the default is `postgres`); the logging user needs permission to create objects on first run.
+
+Example PostgreSQL schema that the sink auto-creates (for reference):
+
+```sql
+CREATE SCHEMA IF NOT EXISTS "public";
+
+CREATE TABLE IF NOT EXISTS "public"."inverter_log" (
+    id BIGSERIAL PRIMARY KEY,
+    "timestamp" TIMESTAMPTZ NOT NULL,
+    inverter_name TEXT NOT NULL,
+    inverter_id INTEGER NOT NULL,
+    input_dc_voltage_v INTEGER,
+    input_dc_current_a DOUBLE PRECISION,
+    input_dc_power_w INTEGER,
+    output_ac_voltage_v INTEGER,
+    output_ac_current_a DOUBLE PRECISION,
+    output_ac_power_w INTEGER,
+    output_ac_power_factor_pct DOUBLE PRECISION,
+    output_ac_frequency_hz DOUBLE PRECISION,
+    total_generation_kwh DOUBLE PRECISION,
+    fault_code INTEGER DEFAULT 0,
+    raw_frame_hex TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inverter_log_timestamp
+  ON "public"."inverter_log" ("timestamp");
+CREATE INDEX IF NOT EXISTS idx_inverter_log_inverter_id
+  ON "public"."inverter_log" (inverter_id);
+CREATE INDEX IF NOT EXISTS idx_inverter_log_fault_code
+  ON "public"."inverter_log" (fault_code);
+```
+
+Run with:
+
+```bash
+solar-rs485-monitor --supabase
+```
+
 ## SQLite Configuration
 
 SQLite is the simplest local logging sink. It uses Python's standard library and does not require a database server, user account, password, or network access.
@@ -930,6 +999,9 @@ Errors are also printed as JSON:
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.
 - `MARIADB_PASSWORD is not set`: set the MariaDB password in `solar-rs485-monitor.conf` before running with `--mariadb`.
 - `MariaDB logging failed`: check `MARIADB_HOST`, `MARIADB_PORT`, firewall rules, database grants, username, password, database name, and table name.
+- `SUPABASE_PASSWORD is not set` or `SUPABASE_* is not set`: set the required Supabase fields in `solar-rs485-monitor.conf` before running with `--supabase`.
+- `Supabase logging failed` or `failed to resolve host ... No address associated with hostname`: if your Supabase Direct Connection requires IPv6, use the Session Pooler host and pooler username (e.g. `aws-1-<region>.pooler.supabase.com`, `postgres.<project_ref>`). Also verify host, port, firewall rules, username, password, database, schema, and table.
+- `psycopg is required for Supabase logging`: install project dependencies so that the `psycopg` package is available.
 - `SQLite unable to open database file`: check `SQLITE_PATH` and directory write permissions.
 - `OPENSEARCH_URL is not set`: set the OpenSearch endpoint before running with `--opensearch`.
 - `OpenSearch request failed`: check the endpoint, index permission, username, password, TLS setting, and cluster network access.
