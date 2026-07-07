@@ -38,6 +38,8 @@ DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DEFAULT_DASHBOARD_MAX_POINTS = 10000
 DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
 DEFAULT_DASHBOARD_RANGE = "Last 2 days"
+DEFAULT_DASHBOARD_MONTHLY_GENERATION_MONTHS = 12
+DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS = 5
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -101,7 +103,7 @@ UI_TEXT = {
         "x_axis_mode": "시간축 스케일",
         "x_axis_mode_fixed": "고정 스케일",
         "x_axis_mode_auto": "자동 스케일",
-        "bucket_minutes": "집계 시간 단위",
+        "bucket_minutes": "표시 기간",
         "max_points": "최대 조회 포인트 수",
         "aggregate_caption": (
             "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
@@ -135,9 +137,11 @@ UI_TEXT = {
         "daily_generation_chart": "일일 발전량 (kWh/day)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
         "monthly_generation_chart": "월간 발전량 (kWh/month)",
-        "monthly_generation_empty": "선택한 범위에 월간 발전량 데이터가 없습니다.",
+        "monthly_generation_scope": "월간 차트는 최근 {months}개월 데이터를 별도로 조회합니다.",
+        "monthly_generation_empty": "최근 {months}개월에 월간 발전량 데이터가 없습니다.",
         "yearly_generation_chart": "연간 발전량 (kWh/year)",
-        "yearly_generation_empty": "선택한 범위에 연간 발전량 데이터가 없습니다.",
+        "yearly_generation_scope": "연간 차트는 최근 {years}년 데이터를 별도로 조회합니다.",
+        "yearly_generation_empty": "최근 {years}년에 연간 발전량 데이터가 없습니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
         "fault_events_caption": "선택한 범위에서 fault_code가 0이 아닌 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
@@ -153,7 +157,7 @@ UI_TEXT = {
         "x_axis_mode": "Time axis scale",
         "x_axis_mode_fixed": "Fixed scale",
         "x_axis_mode_auto": "Auto scale",
-        "bucket_minutes": "Aggregation interval",
+        "bucket_minutes": "Display period",
         "max_points": "Max chart points",
         "aggregate_caption": (
             "This limits the maximum number of {bucket} aggregated chart "
@@ -187,9 +191,11 @@ UI_TEXT = {
         "daily_generation_chart": "Daily Generation (kWh/day)",
         "daily_generation_empty": "No daily generation data in the selected range.",
         "monthly_generation_chart": "Monthly Generation (kWh/month)",
-        "monthly_generation_empty": "No monthly generation data in the selected range.",
+        "monthly_generation_scope": "Monthly chart separately queries the last {months} months.",
+        "monthly_generation_empty": "No monthly generation data in the last {months} months.",
         "yearly_generation_chart": "Yearly Generation (kWh/year)",
-        "yearly_generation_empty": "No yearly generation data in the selected range.",
+        "yearly_generation_scope": "Yearly chart separately queries the last {years} years.",
+        "yearly_generation_empty": "No yearly generation data in the last {years} years.",
         "fault_events": "Fault Events (Recent 200)",
         "fault_events_caption": "Latest events where fault_code is non-zero within the selected range.",
         "fault_events_empty": "No fault events in the selected range.",
@@ -482,6 +488,35 @@ def get_dashboard_default_range() -> str:
         return raw
 
     return DEFAULT_DASHBOARD_RANGE
+
+
+def get_positive_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+
+    return min(maximum, max(minimum, value))
+
+
+def get_dashboard_monthly_generation_months() -> int:
+    return get_positive_int_env(
+        "DASHBOARD_MONTHLY_GENERATION_MONTHS",
+        DEFAULT_DASHBOARD_MONTHLY_GENERATION_MONTHS,
+        minimum=1,
+        maximum=120,
+    )
+
+
+def get_dashboard_yearly_generation_years() -> int:
+    return get_positive_int_env(
+        "DASHBOARD_YEARLY_GENERATION_YEARS",
+        DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS,
+        minimum=1,
+        maximum=50,
+    )
 
 
 RGB_COLOR_RE = re.compile(
@@ -1135,6 +1170,70 @@ def get_time_bounds(
         return start_local.astimezone(timezone.utc), now_utc
 
     return now_utc - RANGES[range_name], now_utc
+
+
+def shift_month(year: int, month: int, offset: int) -> tuple[int, int]:
+    month_index = year * 12 + (month - 1) + offset
+    return month_index // 12, month_index % 12 + 1
+
+
+def get_monthly_generation_time_bounds(
+    until: datetime,
+    display_timezone: ZoneInfo,
+    months: int,
+) -> tuple[datetime, datetime]:
+    until_local = until.astimezone(display_timezone)
+    start_year, start_month = shift_month(
+        until_local.year,
+        until_local.month,
+        -(months - 1),
+    )
+    start_local = datetime(
+        start_year,
+        start_month,
+        1,
+        tzinfo=display_timezone,
+    )
+    return start_local.astimezone(timezone.utc), until
+
+
+def get_yearly_generation_time_bounds(
+    until: datetime,
+    display_timezone: ZoneInfo,
+    years: int,
+) -> tuple[datetime, datetime]:
+    until_local = until.astimezone(display_timezone)
+    start_local = datetime(
+        until_local.year - years + 1,
+        1,
+        1,
+        tzinfo=display_timezone,
+    )
+    return start_local.astimezone(timezone.utc), until
+
+
+def get_recent_month_labels(
+    until: datetime,
+    display_timezone: ZoneInfo,
+    months: int,
+) -> list[str]:
+    until_local = until.astimezone(display_timezone)
+    labels = []
+
+    for offset in range(-(months - 1), 1):
+        year, month = shift_month(until_local.year, until_local.month, offset)
+        labels.append(f"{year:04d}-{month:02d}")
+
+    return labels
+
+
+def get_recent_year_labels(
+    until: datetime,
+    display_timezone: ZoneInfo,
+    years: int,
+) -> list[str]:
+    until_year = until.astimezone(display_timezone).year
+    return [str(year) for year in range(until_year - years + 1, until_year + 1)]
 
 
 def get_min_bucket_seconds_for_range(
@@ -2728,6 +2827,11 @@ def render_daily_generation_chart(
     x_axis = {
         "type": "category",
         "data": categories,
+        "axisTick": {
+            "show": True,
+            "alignWithLabel": True,
+            "interval": 0,
+        },
         "axisLabel": {
             "hideOverlap": True,
             "interval": "auto",
@@ -2823,6 +2927,25 @@ def aggregate_generation_by_period(
     return grouped
 
 
+def fill_period_generation_labels(period_df, labels: list[str]):
+    import pandas as pd
+
+    if not labels:
+        return pd.DataFrame(columns=["label", "value"])
+
+    values_by_label = {}
+    if not period_df.empty:
+        for _, row in period_df.iterrows():
+            values_by_label[str(row["label"])] = float(row["value"])
+
+    return pd.DataFrame(
+        {
+            "label": labels,
+            "value": [values_by_label.get(label, 0.0) for label in labels],
+        }
+    )
+
+
 def render_period_generation_chart(
     st,
     period_df,
@@ -2853,6 +2976,11 @@ def render_period_generation_chart(
         "xAxis": {
             "type": "category",
             "data": categories,
+            "axisTick": {
+                "show": True,
+                "alignWithLabel": True,
+                "interval": 0,
+            },
             "axisLabel": {
                 "hideOverlap": True,
                 "interval": "auto",
@@ -2934,7 +3062,34 @@ def render_dashboard_body(
         1,
         tzinfo=display_timezone,
     ).astimezone(timezone.utc)
-    generation_since = min(since.astimezone(timezone.utc), latest_year_start)
+    monthly_generation_months = get_dashboard_monthly_generation_months()
+    yearly_generation_years = get_dashboard_yearly_generation_years()
+    monthly_generation_since, _ = get_monthly_generation_time_bounds(
+        until=until,
+        display_timezone=display_timezone,
+        months=monthly_generation_months,
+    )
+    yearly_generation_since, _ = get_yearly_generation_time_bounds(
+        until=until,
+        display_timezone=display_timezone,
+        years=yearly_generation_years,
+    )
+    monthly_generation_labels = get_recent_month_labels(
+        until=until,
+        display_timezone=display_timezone,
+        months=monthly_generation_months,
+    )
+    yearly_generation_labels = get_recent_year_labels(
+        until=until,
+        display_timezone=display_timezone,
+        years=yearly_generation_years,
+    )
+    generation_since = min(
+        since.astimezone(timezone.utc),
+        latest_year_start,
+        monthly_generation_since,
+        yearly_generation_since,
+    )
     daily_generation_df = None
     daily_generation_error = None
 
@@ -3116,58 +3271,98 @@ def render_dashboard_body(
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
-                        monthly_df = aggregate_generation_by_period(
-                            daily_df=daily_df,
-                            display_timezone=display_timezone,
-                            period="month",
+
+                    monthly_daily_df = filter_daily_generation_by_range(
+                        daily_generation_df,
+                        since=monthly_generation_since,
+                        until=until,
+                        display_timezone=display_timezone,
+                    )
+                    yearly_daily_df = filter_daily_generation_by_range(
+                        daily_generation_df,
+                        since=yearly_generation_since,
+                        until=until,
+                        display_timezone=display_timezone,
+                    )
+                    monthly_raw_df = aggregate_generation_by_period(
+                        daily_df=monthly_daily_df,
+                        display_timezone=display_timezone,
+                        period="month",
+                    )
+                    yearly_raw_df = aggregate_generation_by_period(
+                        daily_df=yearly_daily_df,
+                        display_timezone=display_timezone,
+                        period="year",
+                    )
+                    if fixed_time_axis:
+                        monthly_df = fill_period_generation_labels(
+                            monthly_raw_df,
+                            monthly_generation_labels,
                         )
-                        yearly_df = aggregate_generation_by_period(
-                            daily_df=daily_df,
-                            display_timezone=display_timezone,
-                            period="year",
+                        yearly_df = fill_period_generation_labels(
+                            yearly_raw_df,
+                            yearly_generation_labels,
+                        )
+                    else:
+                        monthly_df = monthly_raw_df
+                        yearly_df = yearly_raw_df
+
+                    monthly_col, yearly_col = st.columns(2)
+                    with monthly_col:
+                        st.markdown(f"#### {text['monthly_generation_chart']}")
+                        st.caption(
+                            text["monthly_generation_scope"].format(
+                                months=monthly_generation_months,
+                            )
+                        )
+                        if monthly_raw_df.empty:
+                            st.caption(
+                                text["monthly_generation_empty"].format(
+                                    months=monthly_generation_months,
+                                )
+                            )
+                        else:
+                            monthly_stats = format_period_generation_stats(monthly_df)
+                            if monthly_stats:
+                                st.caption(monthly_stats)
+                        render_period_generation_chart(
+                            st=st,
+                            period_df=monthly_df,
+                            title=text["monthly_generation_chart"],
+                            chart_key_prefix="echart_monthly_generation",
+                            color=get_chart_color(
+                                "monthly_generation",
+                                GENERATION_CHART_COLORS["monthly_generation"],
+                            ),
                         )
 
-                        monthly_col, yearly_col = st.columns(2)
-                        with monthly_col:
-                            st.markdown(f"#### {text['monthly_generation_chart']}")
-                            if monthly_df.empty:
-                                st.caption(text["monthly_generation_empty"])
-                            else:
-                                monthly_stats = format_period_generation_stats(monthly_df)
-                                if monthly_stats:
-                                    st.caption(monthly_stats)
-                                render_period_generation_chart(
-                                    st=st,
-                                    period_df=monthly_df,
-                                    title=text["monthly_generation_chart"],
-                                    chart_key_prefix="echart_monthly_generation",
-                                    color=get_chart_color(
-                                        "monthly_generation",
-                                        GENERATION_CHART_COLORS["monthly_generation"],
-                                    ),
+                    with yearly_col:
+                        st.markdown(f"#### {text['yearly_generation_chart']}")
+                        st.caption(
+                            text["yearly_generation_scope"].format(
+                                years=yearly_generation_years,
+                            )
+                        )
+                        if yearly_raw_df.empty:
+                            st.caption(
+                                text["yearly_generation_empty"].format(
+                                    years=yearly_generation_years,
                                 )
-
-                        with yearly_col:
-                            st.markdown(f"#### {text['yearly_generation_chart']}")
-                            if yearly_df.empty:
-                                st.caption(text["yearly_generation_empty"])
-                            else:
-                                yearly_stats = format_period_generation_stats(yearly_df)
-                                if yearly_stats:
-                                    st.caption(yearly_stats)
-                                render_period_generation_chart(
-                                    st=st,
-                                    period_df=yearly_df,
-                                    title=text["yearly_generation_chart"],
-                                    chart_key_prefix="echart_yearly_generation",
-                                    color=get_chart_color(
-                                        "yearly_generation",
-                                        GENERATION_CHART_COLORS["yearly_generation"],
-                                    ),
-                                )
-
-                        if daily_df.empty:
-                            st.caption(text["daily_generation_empty"])
+                            )
+                        else:
+                            yearly_stats = format_period_generation_stats(yearly_df)
+                            if yearly_stats:
+                                st.caption(yearly_stats)
+                        render_period_generation_chart(
+                            st=st,
+                            period_df=yearly_df,
+                            title=text["yearly_generation_chart"],
+                            chart_key_prefix="echart_yearly_generation",
+                            color=get_chart_color(
+                                "yearly_generation",
+                                GENERATION_CHART_COLORS["yearly_generation"],
+                            ),
+                        )
             continue
 
         chart_columns = st.columns(2)
@@ -3308,12 +3503,7 @@ def run_app() -> None:
                 query_range if query_range in RANGES else get_dashboard_default_range()
             )
 
-        range_name = st.selectbox(
-            text["range"],
-            range_options,
-            key="dashboard_range_name",
-            format_func=lambda value: RANGE_LABELS[lang][value],
-        )
+        range_name = st.session_state["dashboard_range_name"]
 
         dashboard_max_points = get_dashboard_max_points()
         min_bucket_seconds = get_min_bucket_seconds_for_range(
@@ -3347,6 +3537,13 @@ def run_app() -> None:
             bucket_options,
             key="dashboard_bucket_seconds",
             format_func=lambda value: BUCKET_LABELS[lang][value],
+        )
+
+        range_name = st.selectbox(
+            text["range"],
+            range_options,
+            key="dashboard_range_name",
+            format_func=lambda value: RANGE_LABELS[lang][value],
         )
 
         limit = dashboard_max_points

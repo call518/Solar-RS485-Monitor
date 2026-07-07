@@ -46,6 +46,10 @@ DASHBOARD_LANGUAGE="English"
 # [Optional]   Last 24 hours, Last 2 days, Last 3 days, Last 7 days, Last 30 days,
 # [Optional]   Last 90 days, Last 6 months
 DASHBOARD_DEFAULT_RANGE="Last 7 days"
+# [Optional] Fixed display windows for generation summary charts.
+# [Optional] These are config-only and are not exposed in the dashboard UI.
+DASHBOARD_MONTHLY_GENERATION_MONTHS="12"
+DASHBOARD_YEARLY_GENERATION_YEARS="5"
 # [Optional] Dashboard chart colors. Supported formats: #RRGGBB, #RGB, rgb(r,g,b)
 # [Optional] Invalid values fall back to defaults.
 DASHBOARD_CHART_COLOR_TOTAL_GENERATION_KWH="#16a34a"
