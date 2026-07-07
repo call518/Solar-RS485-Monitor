@@ -586,7 +586,7 @@ If multiple targets are configured, the alert attempts delivery to all of them. 
 
 By default, the alert channel skips normal measurements and sends messages only when a fault event is detected (excluding Bit 0, and triggered when any Bit 1+ is active). The fault event message includes key measurement values and active fault bits. Set `TELEGRAM_SEND_SUMMARY="true"` if you also want a summary message on each detected event.
 
-If you want Telegram to notify inverter standby/off transition events, set `TELEGRAM_SEND_STANDBY_EVENT="true"`. This sends a message only when `fault_code` Bit 0 changes from `0` to `1` (transition-based), so repeated low-power nighttime samples do not spam duplicate standby messages.
+If you want Telegram to notify inverter standby/off and normal recovery transition events, set `TELEGRAM_SEND_STANDBY_EVENT="true"`. This sends a message only when `fault_code` Bit 0 changes from `0` to `1` or `1` to `0` (transition-based), so repeated low-power nighttime samples do not spam duplicate standby messages. If Bit 1+ fault bits are active during a `1` to `0` transition, the sample is treated as a fault event instead of a normal event.
 
 ## Dashboard
 

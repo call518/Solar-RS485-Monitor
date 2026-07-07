@@ -150,6 +150,21 @@ def send_to_all_chat_ids(config: dict, text: str) -> dict:
     }
 
 
+def build_operation_state_message(data: dict, fault_code: int, state: str) -> str:
+    bit_value = 1 if state == "STANDBY" else 0
+    title = "Standby" if state == "STANDBY" else "Normal"
+
+    return "\n".join(
+        [
+            f"*Solar RS485 {title} Event*",
+            f"Time: `{data.get('@timestamp', '-')}`",
+            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
+            f"Fault code: `{fault_code}`",
+            f"State: `{state} (Bit 0 = {bit_value})`",
+        ]
+    )
+
+
 def write_to_telegram(data: dict, config: dict) -> dict:
     global _last_operation_stopped
 
@@ -161,13 +176,19 @@ def write_to_telegram(data: dict, config: dict) -> dict:
     is_operation_stopped = (fault_code & OPERATION_STOP_MASK) != 0
 
     standby_transition = False
+    normal_transition = False
     if config.get("send_standby_event", False):
         standby_transition = _last_operation_stopped is False and is_operation_stopped
+        normal_transition = (
+            _last_operation_stopped is True
+            and not is_operation_stopped
+            and not is_fault_event
+        )
 
     if _last_operation_stopped is None:
         _last_operation_stopped = is_operation_stopped
 
-    should_send = is_fault_event or standby_transition
+    should_send = is_fault_event or standby_transition or normal_transition
 
     if not should_send:
         _last_operation_stopped = is_operation_stopped
@@ -182,19 +203,23 @@ def write_to_telegram(data: dict, config: dict) -> dict:
         sent_event = send_to_all_chat_ids(config, build_fault_event_message(data))
 
     if standby_transition and config.get("send_standby_event", False):
-        standby_message = "\n".join(
-            [
-                "*Solar RS485 Standby Event*",
-                f"Time: `{data.get('@timestamp', '-')}`",
-                f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-                f"Fault code: `{fault_code}`",
-                "State: `STANDBY (Bit 0 = 1)`",
-            ]
+        sent_standby = send_to_all_chat_ids(
+            config,
+            build_operation_state_message(data, fault_code, "STANDBY"),
         )
-        sent_standby = send_to_all_chat_ids(config, standby_message)
         sent_event = {
             "sent": sent_event.get("sent", []) + sent_standby.get("sent", []),
             "failed": sent_event.get("failed", []) + sent_standby.get("failed", []),
+        }
+
+    if normal_transition and config.get("send_standby_event", False):
+        sent_normal = send_to_all_chat_ids(
+            config,
+            build_operation_state_message(data, fault_code, "NORMAL"),
+        )
+        sent_event = {
+            "sent": sent_event.get("sent", []) + sent_normal.get("sent", []),
+            "failed": sent_event.get("failed", []) + sent_normal.get("failed", []),
         }
 
     if config.get("send_summary", False):
