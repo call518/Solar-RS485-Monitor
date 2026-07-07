@@ -103,7 +103,7 @@ UI_TEXT = {
         "x_axis_mode": "시간축 스케일",
         "x_axis_mode_fixed": "고정 스케일",
         "x_axis_mode_auto": "자동 스케일",
-        "bucket_minutes": "표시 기간",
+        "bucket_minutes": "집계 단위",
         "max_points": "최대 조회 포인트 수",
         "aggregate_caption": (
             "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
@@ -157,7 +157,7 @@ UI_TEXT = {
         "x_axis_mode": "Time axis scale",
         "x_axis_mode_fixed": "Fixed scale",
         "x_axis_mode_auto": "Auto scale",
-        "bucket_minutes": "Display period",
+        "bucket_minutes": "Aggregation interval",
         "max_points": "Max chart points",
         "aggregate_caption": (
             "This limits the maximum number of {bucket} aggregated chart "
