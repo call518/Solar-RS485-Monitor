@@ -1783,10 +1783,16 @@ def render_latest_metric_board(
             else latest.get(metric_name)
         )
         value = format_snapshot_value(metric_name, raw_value)
+        if metric_name in {"total_generation_kwh", "daily_generation_kwh"}:
+            color_label = "#1e40af"
+            color_value = "#8B0000"
+        else:
+            color_label = "#475569"
+            color_value = "#1f2937"
         items.append(f"""
         <div class="latest-metric">
-          <div class="latest-metric-label">{html.escape(label)}</div>
-          <div class="latest-metric-value">{html.escape(value)}</div>
+          <div class="latest-metric-label" style="color: {color_label};">{html.escape(label)}</div>
+          <div class="latest-metric-value" style="color: {color_value};">{html.escape(value)}</div>
         </div>
         """)
 
