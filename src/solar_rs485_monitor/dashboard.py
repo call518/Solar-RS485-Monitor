@@ -2693,11 +2693,11 @@ def coerce_utc_datetime(value) -> datetime:
 
 def build_generation_snapshot(
     daily_df,
-    latest_timestamp,
+    snapshot_timestamp: datetime,
     display_timezone: ZoneInfo,
 ) -> dict[str, float]:
-    latest_utc = coerce_utc_datetime(latest_timestamp)
-    latest_local = latest_utc.astimezone(display_timezone)
+    snapshot_utc = coerce_utc_datetime(snapshot_timestamp)
+    snapshot_local = snapshot_utc.astimezone(display_timezone)
 
     if daily_df.empty:
         return {}
@@ -2713,9 +2713,9 @@ def build_generation_snapshot(
         period="year",
     )
 
-    current_day = latest_local.strftime("%Y-%m-%d")
-    current_month = latest_local.strftime("%Y-%m")
-    current_year = latest_local.strftime("%Y")
+    current_day = snapshot_local.strftime("%Y-%m-%d")
+    current_month = snapshot_local.strftime("%Y-%m")
+    current_year = snapshot_local.strftime("%Y")
 
     daily_values: dict[str, float] = {}
     for _, row in daily_df.iterrows():
@@ -3250,7 +3250,7 @@ def render_dashboard_body(
     if daily_generation_df is not None:
         generation_snapshot = build_generation_snapshot(
             daily_df=daily_generation_df,
-            latest_timestamp=latest["timestamp"],
+            snapshot_timestamp=datetime.now(timezone.utc),
             display_timezone=display_timezone,
         )
     else:
