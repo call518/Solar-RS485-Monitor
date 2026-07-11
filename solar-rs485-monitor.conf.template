@@ -43,8 +43,8 @@ DASHBOARD_TIME_AXIS_MODE="auto"
 DASHBOARD_LANGUAGE="English"
 # [Optional] Default query range selection in dashboard sidebar.
 # [Optional] Supported values (case-sensitive): Today, Last 1 hour, Last 6 hours,
-# [Optional]   Last 24 hours, Last 2 days, Last 3 days, Last 7 days, Last 30 days,
-# [Optional]   Last 90 days, Last 6 months
+# [Optional]   Last 24 hours, Last 2 days, Last 3 days, Last 7 days, Last 14 days,
+# [Optional]   Last 30 days, Last 90 days, Last 6 months
 DASHBOARD_DEFAULT_RANGE="Last 7 days"
 # [Optional] Fixed display windows for generation summary charts.
 # [Optional] These are config-only and are not exposed in the dashboard UI.

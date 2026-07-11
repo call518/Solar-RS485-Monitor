@@ -618,7 +618,8 @@ Minimum aggregation interval by selected range with the default `DASHBOARD_MAX_P
 | Today | `Today` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
 | Last 2 days | `Last 2 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
 | Last 3 days | `Last 3 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 7 days | `Last 7 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 7 days | `Last 7 days` | 2 minutes | 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 14 days | `Last 14 days` | 5 minutes | 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
 | Last 30 days | `Last 30 days` | 5 minutes | 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
 | Last 90 days | `Last 90 days` | 15 minutes | 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
 | Last 6 months | `Last 6 months` | 30 minutes | 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |

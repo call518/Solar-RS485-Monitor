@@ -215,6 +215,7 @@ RANGE_LABELS = {
         "Last 2 days": "최근 2일",
         "Last 3 days": "최근 3일",
         "Last 7 days": "최근 7일",
+        "Last 14 days": "최근 14일",
         "Last 30 days": "최근 30일",
         "Last 90 days": "최근 90일",
         "Last 6 months": "최근 6개월",
@@ -227,6 +228,7 @@ RANGE_LABELS = {
         "Last 2 days": "Last 2 days",
         "Last 3 days": "Last 3 days",
         "Last 7 days": "Last 7 days",
+        "Last 14 days": "Last 14 days",
         "Last 30 days": "Last 30 days",
         "Last 90 days": "Last 90 days",
         "Last 6 months": "Last 6 months",
@@ -342,6 +344,7 @@ RANGES = {
     "Last 2 days": timedelta(days=2),
     "Last 3 days": timedelta(days=3),
     "Last 7 days": timedelta(days=7),
+    "Last 14 days": timedelta(days=14),
     "Last 30 days": timedelta(days=30),
     "Last 90 days": timedelta(days=90),
     "Last 6 months": timedelta(days=183),
@@ -352,6 +355,7 @@ CALENDAR_DAY_RANGE_NAMES = {
     "Last 2 days",
     "Last 3 days",
     "Last 7 days",
+    "Last 14 days",
     "Last 30 days",
     "Last 90 days",
     "Last 6 months",
@@ -1242,11 +1246,7 @@ def get_min_bucket_seconds_for_range(
     display_timezone: ZoneInfo,
     max_points: int,
 ) -> int:
-    since, until = get_time_bounds(range_name, display_timezone)
-    duration_seconds = max(
-        1.0,
-        (until.astimezone(timezone.utc) - since.astimezone(timezone.utc)).total_seconds(),
-    )
+    duration_seconds = max(1.0, RANGES[range_name].total_seconds())
     required_bucket_seconds = int(math.ceil(duration_seconds / max(1, max_points)))
 
     for bucket in BUCKET_SECONDS:
