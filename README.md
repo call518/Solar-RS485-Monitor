@@ -247,6 +247,7 @@ DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
 DASHBOARD_MAX_POINTS="10000"
+DASHBOARD_DEFAULT_RANGE="Last 7 days"
 DASHBOARD_MONTHLY_GENERATION_MONTHS="12"
 DASHBOARD_YEARLY_GENERATION_YEARS="5"
 DASHBOARD_AUTH_ENABLED="false"
@@ -269,6 +270,8 @@ The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to det
 `DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `60`, `120`, `300`, and `600`. A value between `1` and `59` is clamped to `60` for safety.
 
 `DASHBOARD_MAX_POINTS` sets the maximum aggregated points queried for charts. This value is config-only (not editable from the dashboard UI). Allowed range is `100..300000`, and the default is `10000`.
+
+`DASHBOARD_DEFAULT_RANGE` is used to calculate the initial start and end dates when the dashboard first loads. The default is `Last 7 days`, and users can still change the start and end dates from the sidebar.
 
 `DASHBOARD_MONTHLY_GENERATION_MONTHS` and `DASHBOARD_YEARLY_GENERATION_YEARS` set fixed display windows for the monthly and yearly generation charts. These values are config-only and are not exposed in the dashboard UI.
 
@@ -604,25 +607,9 @@ Show the dashboard command version:
 solar-rs485-monitor-dashboard --version
 ```
 
-Open the displayed Streamlit URL in a browser. The sidebar lets you select the data source and time range up to 6 months.
+Open the displayed Streamlit URL in a browser. The sidebar lets you select the data source, start date, and end date. If the start and end dates are the same, the dashboard shows that single day. The end date cannot be earlier than the start date, and neither date can be in the future. The initial start and end dates are calculated from `DASHBOARD_DEFAULT_RANGE`.
 
-The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, 30 minute, 1 hour, 3 hour, 6 hour, or 12 hour buckets before charting to reduce database transfer and browser rendering cost. The minimum selectable bucket is raised dynamically by selected range and `DASHBOARD_MAX_POINTS` so oversized result sets are avoided. Monthly and yearly generation charts use their own fixed config-only windows instead of the selected sidebar range.
-
-Minimum aggregation interval by selected range with the default `DASHBOARD_MAX_POINTS=10000`:
-
-| Range | Config value | Minimum interval | Selectable intervals |
-| --- | --- | --- | --- |
-| Last 1 hour | `Last 1 hour` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 6 hours | `Last 6 hours` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 24 hours | `Last 24 hours` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Today | `Today` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 2 days | `Last 2 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 3 days | `Last 3 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 7 days | `Last 7 days` | 2 minutes | 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 14 days | `Last 14 days` | 5 minutes | 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 30 days | `Last 30 days` | 5 minutes | 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 90 days | `Last 90 days` | 15 minutes | 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
-| Last 6 months | `Last 6 months` | 30 minutes | 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, 30 minute, 1 hour, 3 hour, 6 hour, or 12 hour buckets before charting to reduce database transfer and browser rendering cost. The minimum selectable bucket is raised dynamically by selected date range and `DASHBOARD_MAX_POINTS` so oversized result sets are avoided. Monthly and yearly generation charts use their own fixed config-only windows instead of the selected sidebar date range.
 
 Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The default sidebar auto-refresh option can be set with `DASHBOARD_AUTO_REFRESH_SECONDS`, and users can still change it from the sidebar while running. The selected interval refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
 

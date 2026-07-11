@@ -245,6 +245,7 @@ DASHBOARD_GATHER_USAGE_STATS="false"
 DASHBOARD_RUN_ON_SAVE="false"
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
 DASHBOARD_MAX_POINTS="10000"
+DASHBOARD_DEFAULT_RANGE="Last 7 days"
 DASHBOARD_MONTHLY_GENERATION_MONTHS="12"
 DASHBOARD_YEARLY_GENERATION_YEARS="5"
 DASHBOARD_AUTH_ENABLED="false"
@@ -267,6 +268,8 @@ ALERT_CHANNELS=""
 `DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `60`, `120`, `300`, `600`이며, 안전을 위해 `1`~`59`를 설정하면 `60`으로 보정됩니다.
 
 `DASHBOARD_MAX_POINTS`는 차트 조회 시 사용할 최대 집계 포인트 수를 지정합니다. 이 값은 설정 파일에서만 변경할 수 있으며(대시보드 UI에서 직접 변경 불가), 허용 범위는 `100..300000`, 기본값은 `10000`입니다.
+
+`DASHBOARD_DEFAULT_RANGE`는 대시보드 최초 진입 시 시작일/종료일 기본값을 계산하는 데 사용합니다. 기본값은 `Last 7 days`이며, 사용자는 사이드바에서 시작일과 종료일을 직접 변경할 수 있습니다.
 
 `DASHBOARD_MONTHLY_GENERATION_MONTHS`와 `DASHBOARD_YEARLY_GENERATION_YEARS`는 월간/연간 발전량 차트의 고정 표시 기간을 지정합니다. 이 값은 설정 파일에서만 변경할 수 있으며 대시보드 UI에는 노출되지 않습니다.
 
@@ -603,25 +606,9 @@ solar-rs485-monitor-dashboard
 solar-rs485-monitor-dashboard --version
 ```
 
-브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스와 최대 6개월까지의 조회 기간을 선택할 수 있습니다.
+브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스, 시작일, 종료일을 선택할 수 있습니다. 시작일과 종료일이 같으면 해당 날짜 하루만 조회합니다. 종료일은 시작일 이전으로 선택할 수 없고, 시작일/종료일 모두 오늘 이후 날짜는 선택할 수 없습니다. 시작일/종료일의 최초 기본값은 `DASHBOARD_DEFAULT_RANGE`로 계산됩니다.
 
-대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 단위로 집계됩니다. 또한 선택한 조회 범위와 `DASHBOARD_MAX_POINTS` 값에 따라 선택 가능한 최소 집계 단위가 동적으로 상향됩니다. 월간/연간 발전량 차트는 사이드바 조회 범위 대신 설정 파일의 고정 기간을 사용합니다.
-
-기본 `DASHBOARD_MAX_POINTS=10000` 기준 조회 범위별 최소 집계 단위:
-
-| 조회 범위 | 설정값 | 최소 집계 단위 | 선택 가능 집계 단위 |
-| --- | --- | --- | --- |
-| 최근 1시간 | `Last 1 hour` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 6시간 | `Last 6 hours` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 24시간 | `Last 24 hours` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 오늘 | `Today` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 2일 | `Last 2 days` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 3일 | `Last 3 days` | 1분 | 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 7일 | `Last 7 days` | 2분 | 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 14일 | `Last 14 days` | 5분 | 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 30일 | `Last 30 days` | 5분 | 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 90일 | `Last 90 days` | 15분 | 15분, 30분, 1시간, 3시간, 6시간, 12시간 |
-| 최근 6개월 | `Last 6 months` | 30분 | 30분, 1시간, 3시간, 6시간, 12시간 |
+대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 단위로 집계됩니다. 또한 선택한 기간과 `DASHBOARD_MAX_POINTS` 값에 따라 선택 가능한 최소 집계 단위가 동적으로 상향됩니다. 월간/연간 발전량 차트는 사이드바 기간 대신 설정 파일의 고정 기간을 사용합니다.
 
 대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 사이드바 자동 새로고침 기본 선택값은 `DASHBOARD_AUTO_REFRESH_SECONDS`로 지정할 수 있고, 실행 중에는 사용자가 사이드바에서 다시 변경할 수 있습니다. 선택된 간격은 브라우저 페이지 전체를 reload하지 않고 대시보드 본문 영역을 갱신합니다. 명령행에서 Streamlit 서버 옵션을 override하려면:
 

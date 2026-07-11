@@ -12,7 +12,7 @@ import sqlite3
 import sys
 import time
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -100,7 +100,8 @@ UI_TEXT = {
         "language": "언어",
         "data_source": "데이터 소스",
         "source": "소스",
-        "range": "조회 범위",
+        "start_date": "시작일",
+        "end_date": "종료일",
         "x_axis_mode": "시간축 스케일",
         "x_axis_mode_fixed": "고정 스케일",
         "x_axis_mode_auto": "자동 스케일",
@@ -121,7 +122,7 @@ UI_TEXT = {
         "auth_not_configured": "대시보드 인증이 켜져 있지만 DASHBOARD_AUTH_USERS가 설정되지 않았습니다.",
         "login_success": "로그인되었습니다. 대시보드를 여는 중입니다.",
         "logout_success": "로그아웃되었습니다.",
-        "no_rows": "선택한 소스와 조회 범위에 해당하는 데이터가 없습니다.",
+        "no_rows": "선택한 소스와 기간에 해당하는 데이터가 없습니다.",
         "inverter": "인버터",
         "id": "ID",
         "latest": "최신 시각",
@@ -134,7 +135,7 @@ UI_TEXT = {
         "local": "Local",
         "latest_snapshot": "최신 메트릭",
         "metric_charts": "메트릭 차트",
-        "chart_caption": "각 차트는 선택한 조회 범위의 {bucket} 단위 집계값을 표시합니다.",
+        "chart_caption": "각 차트는 선택한 기간의 {bucket} 단위 집계값을 표시합니다.",
         "daily_generation_chart": "일일 발전량 (kWh/day)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
         "monthly_generation_chart": "월간 발전량 (kWh/month)",
@@ -154,7 +155,8 @@ UI_TEXT = {
         "language": "Language",
         "data_source": "Data Source",
         "source": "Source",
-        "range": "Range",
+        "start_date": "Start date",
+        "end_date": "End date",
         "x_axis_mode": "Time axis scale",
         "x_axis_mode_fixed": "Fixed scale",
         "x_axis_mode_auto": "Auto scale",
@@ -175,7 +177,7 @@ UI_TEXT = {
         "auth_not_configured": "Dashboard authentication is enabled, but DASHBOARD_AUTH_USERS is not set.",
         "login_success": "Login successful. Opening dashboard.",
         "logout_success": "Logged out.",
-        "no_rows": "No rows found for the selected source and range.",
+        "no_rows": "No rows found for the selected source and date range.",
         "inverter": "Inverter",
         "id": "ID",
         "latest": "Latest",
@@ -188,9 +190,9 @@ UI_TEXT = {
         "local": "Local",
         "latest_snapshot": "Latest Metrics",
         "metric_charts": "Metric Charts",
-        "chart_caption": "Each chart shows {bucket} aggregated values for the selected range.",
+        "chart_caption": "Each chart shows {bucket} aggregated values for the selected date range.",
         "daily_generation_chart": "Daily Generation (kWh/day)",
-        "daily_generation_empty": "No daily generation data in the selected range.",
+        "daily_generation_empty": "No daily generation data in the selected date range.",
         "monthly_generation_chart": "Monthly Generation (kWh/month)",
         "monthly_generation_scope": "Monthly chart separately queries the last {months} months.",
         "monthly_generation_empty": "No monthly generation data in the last {months} months.",
@@ -198,40 +200,11 @@ UI_TEXT = {
         "yearly_generation_scope": "Yearly chart separately queries the last {years} years.",
         "yearly_generation_empty": "No yearly generation data in the last {years} years.",
         "fault_events": "Fault Events (Recent 200)",
-        "fault_events_caption": "Latest events where fault_code is non-zero within the selected range.",
-        "fault_events_empty": "No fault events in the selected range.",
+        "fault_events_caption": "Latest events where fault_code is non-zero within the selected date range.",
+        "fault_events_empty": "No fault events in the selected date range.",
         "active_bits": "Active bits",
         "fault_code_label": "Fault code detail",
         "latest_rows": "Latest Rows (Recent 200)",
-    },
-}
-
-RANGE_LABELS = {
-    "ko": {
-        "Last 1 hour": "최근 1시간",
-        "Last 6 hours": "최근 6시간",
-        "Last 24 hours": "최근 24시간",
-        "Today": "오늘",
-        "Last 2 days": "최근 2일",
-        "Last 3 days": "최근 3일",
-        "Last 7 days": "최근 7일",
-        "Last 14 days": "최근 14일",
-        "Last 30 days": "최근 30일",
-        "Last 90 days": "최근 90일",
-        "Last 6 months": "최근 6개월",
-    },
-    "en": {
-        "Last 1 hour": "Last 1 hour",
-        "Last 6 hours": "Last 6 hours",
-        "Last 24 hours": "Last 24 hours",
-        "Today": "Today",
-        "Last 2 days": "Last 2 days",
-        "Last 3 days": "Last 3 days",
-        "Last 7 days": "Last 7 days",
-        "Last 14 days": "Last 14 days",
-        "Last 30 days": "Last 30 days",
-        "Last 90 days": "Last 90 days",
-        "Last 6 months": "Last 6 months",
     },
 }
 
@@ -1177,6 +1150,38 @@ def get_time_bounds(
     return now_utc - RANGES[range_name], now_utc
 
 
+def get_date_range_time_bounds(
+    start_date: date,
+    end_date: date,
+    display_timezone: ZoneInfo,
+) -> tuple[datetime, datetime]:
+    since_date = min(start_date, end_date)
+    until_date = max(start_date, end_date)
+    since_local = datetime.combine(
+        since_date,
+        datetime.min.time(),
+        tzinfo=display_timezone,
+    )
+    until_local = datetime.combine(
+        until_date + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=display_timezone,
+    )
+    return since_local.astimezone(timezone.utc), until_local.astimezone(timezone.utc)
+
+
+def get_display_until(until: datetime) -> datetime:
+    return until.astimezone(timezone.utc) - timedelta(microseconds=1)
+
+
+def get_default_dashboard_dates(display_timezone: ZoneInfo) -> tuple[date, date]:
+    since, until = get_time_bounds(get_dashboard_default_range(), display_timezone)
+    return (
+        since.astimezone(display_timezone).date(),
+        until.astimezone(display_timezone).date(),
+    )
+
+
 def shift_month(year: int, month: int, offset: int) -> tuple[int, int]:
     month_index = year * 12 + (month - 1) + offset
     return month_index // 12, month_index % 12 + 1
@@ -1241,12 +1246,11 @@ def get_recent_year_labels(
     return [str(year) for year in range(until_year - years + 1, until_year + 1)]
 
 
-def get_min_bucket_seconds_for_range(
-    range_name: str,
-    display_timezone: ZoneInfo,
+def get_min_bucket_seconds_for_duration(
+    duration_seconds: float,
     max_points: int,
 ) -> int:
-    duration_seconds = max(1.0, RANGES[range_name].total_seconds())
+    duration_seconds = max(1.0, duration_seconds)
     required_bucket_seconds = int(math.ceil(duration_seconds / max(1, max_points)))
 
     for bucket in BUCKET_SECONDS:
@@ -1280,6 +1284,16 @@ def resolve_dashboard_bucket_seconds(
         return min_bucket_seconds
 
     return current_bucket_seconds
+
+
+def parse_query_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def normalize_timestamp_value(value):
@@ -3051,7 +3065,9 @@ def render_period_generation_chart(
 def render_dashboard_body(
     st,
     source: str,
-    range_name: str,
+    since: datetime,
+    until: datetime,
+    display_until: datetime,
     bucket_seconds: int,
     limit: int,
     text: dict[str, str],
@@ -3061,8 +3077,6 @@ def render_dashboard_body(
     display_timezone: ZoneInfo,
     fixed_time_axis: bool,
 ) -> None:
-    since, until = get_time_bounds(range_name, display_timezone)
-
     try:
         if source == "MariaDB":
             df = read_mariadb_data(
@@ -3264,7 +3278,7 @@ def render_dashboard_body(
                     metric_name,
                     metric_labels[metric_name],
                     since,
-                    until,
+                    display_until,
                     fixed_time_axis,
                 )
             else:
@@ -3274,7 +3288,7 @@ def render_dashboard_body(
                     metric_name,
                     metric_labels[metric_name],
                     since,
-                    until,
+                    display_until,
                     fixed_time_axis,
                 )
 
@@ -3285,7 +3299,7 @@ def render_dashboard_body(
                     daily_df = filter_daily_generation_by_range(
                         daily_generation_df,
                         since=since,
-                        until=until,
+                        until=display_until,
                         display_timezone=display_timezone,
                     )
                     if daily_df.empty and not fixed_time_axis:
@@ -3300,7 +3314,7 @@ def render_dashboard_body(
                             daily_df=daily_df,
                             title=text["daily_generation_chart"],
                             since=since,
-                            until=until,
+                            until=display_until,
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
@@ -3413,7 +3427,7 @@ def render_dashboard_body(
                         metric_name,
                         metric_labels[metric_name],
                         since,
-                        until,
+                        display_until,
                         fixed_time_axis,
                     )
                 else:
@@ -3423,7 +3437,7 @@ def render_dashboard_body(
                         metric_name,
                         metric_labels[metric_name],
                         since,
-                        until,
+                        display_until,
                         fixed_time_axis,
                     )
 
@@ -3529,27 +3543,55 @@ def run_app() -> None:
         # needed again.
         # source = st.radio(text["source"], ["MariaDB", "SQLite"], horizontal=True)
 
-        range_options = list(RANGES.keys())
-        if "dashboard_range_name" not in st.session_state:
-            query_range = get_query_param("range")
-            st.session_state["dashboard_range_name"] = (
-                query_range if query_range in RANGES else get_dashboard_default_range()
+        today = datetime.now(display_timezone).date()
+        default_start_date, default_end_date = get_default_dashboard_dates(
+            display_timezone,
+        )
+        if "dashboard_start_date" not in st.session_state:
+            st.session_state["dashboard_start_date"] = (
+                parse_query_date(get_query_param("start")) or default_start_date
             )
-
-        range_name = st.session_state["dashboard_range_name"]
+        if "dashboard_end_date" not in st.session_state:
+            st.session_state["dashboard_end_date"] = (
+                parse_query_date(get_query_param("end")) or default_end_date
+            )
+        if st.session_state["dashboard_start_date"] > today:
+            st.session_state["dashboard_start_date"] = today
+        if st.session_state["dashboard_end_date"] > today:
+            st.session_state["dashboard_end_date"] = today
 
         dashboard_max_points = get_dashboard_max_points()
-        min_bucket_seconds = get_min_bucket_seconds_for_range(
-            range_name=range_name,
+        start_date = st.date_input(
+            text["start_date"],
+            key="dashboard_start_date",
+            max_value=today,
+        )
+        if st.session_state["dashboard_end_date"] < start_date:
+            st.session_state["dashboard_end_date"] = start_date
+        end_date = st.date_input(
+            text["end_date"],
+            key="dashboard_end_date",
+            min_value=start_date,
+            max_value=today,
+        )
+        since, until = get_date_range_time_bounds(
+            start_date=start_date,
+            end_date=end_date,
             display_timezone=display_timezone,
+        )
+        display_until = get_display_until(until)
+        bucket_scope_key = f"date:{start_date}:{end_date}"
+        min_bucket_seconds = get_min_bucket_seconds_for_duration(
+            duration_seconds=(until - since).total_seconds(),
             max_points=dashboard_max_points,
         )
+
         bucket_options = [
             bucket for bucket in BUCKET_SECONDS if bucket >= min_bucket_seconds
         ]
 
-        previous_bucket_range_name = st.session_state.get(
-            "dashboard_bucket_range_name",
+        previous_bucket_scope_key = st.session_state.get(
+            "dashboard_bucket_scope_key",
         )
         current_bucket_seconds = st.session_state.get("dashboard_bucket_seconds")
         st.session_state["dashboard_bucket_seconds"] = resolve_dashboard_bucket_seconds(
@@ -3557,22 +3599,15 @@ def run_app() -> None:
             query_bucket_seconds=get_query_param("bucket"),
             bucket_options=bucket_options,
             min_bucket_seconds=min_bucket_seconds,
-            range_changed=previous_bucket_range_name != range_name,
+            range_changed=previous_bucket_scope_key != bucket_scope_key,
         )
-        st.session_state["dashboard_bucket_range_name"] = range_name
+        st.session_state["dashboard_bucket_scope_key"] = bucket_scope_key
 
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],
             bucket_options,
             key="dashboard_bucket_seconds",
             format_func=lambda value: BUCKET_LABELS[lang][value],
-        )
-
-        range_name = st.selectbox(
-            text["range"],
-            range_options,
-            key="dashboard_range_name",
-            format_func=lambda value: RANGE_LABELS[lang][value],
         )
 
         limit = dashboard_max_points
@@ -3619,20 +3654,32 @@ def run_app() -> None:
         if hasattr(st, "query_params"):
             desired_query_params = {
                 "lang": lang,
-                "range": range_name,
+                "start": str(st.session_state["dashboard_start_date"]),
+                "end": str(st.session_state["dashboard_end_date"]),
                 "bucket": str(bucket_seconds),
                 "refresh": str(refresh_seconds),
                 "axis": axis_mode,
             }
+            managed_query_param_keys = {
+                *desired_query_params.keys(),
+                "mode",
+                "range",
+            }
+            obsolete_query_params_present = any(
+                get_query_param(key) is not None for key in ("mode", "range")
+            )
             current_managed_query_params = {
                 key: get_query_param(key) for key in desired_query_params
             }
-            if current_managed_query_params != desired_query_params:
+            if (
+                current_managed_query_params != desired_query_params
+                or obsolete_query_params_present
+            ):
                 merged_query_params: dict[str, str] = {}
                 if hasattr(st.query_params, "to_dict"):
                     existing_query_params = st.query_params.to_dict()
                     for key, value in existing_query_params.items():
-                        if key in desired_query_params:
+                        if key in managed_query_param_keys:
                             continue
                         if isinstance(value, list):
                             merged_query_params[key] = str(value[0]) if value else ""
@@ -3659,7 +3706,9 @@ def run_app() -> None:
             render_dashboard_body(
                 st=st,
                 source=source,
-                range_name=range_name,
+                since=since,
+                until=until,
+                display_until=display_until,
                 bucket_seconds=bucket_seconds,
                 limit=int(limit),
                 text=text,
@@ -3676,7 +3725,9 @@ def run_app() -> None:
     render_dashboard_body(
         st=st,
         source=source,
-        range_name=range_name,
+        since=since,
+        until=until,
+        display_until=display_until,
         bucket_seconds=bucket_seconds,
         limit=int(limit),
         text=text,
