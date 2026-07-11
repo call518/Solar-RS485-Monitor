@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import sys
 import time
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -1253,6 +1254,32 @@ def get_min_bucket_seconds_for_range(
             return bucket
 
     return BUCKET_SECONDS[-1]
+
+
+def resolve_dashboard_bucket_seconds(
+    *,
+    current_bucket_seconds: int | None,
+    query_bucket_seconds: str | None,
+    bucket_options: Sequence[int],
+    min_bucket_seconds: int,
+    range_changed: bool,
+) -> int:
+    if current_bucket_seconds is None:
+        if query_bucket_seconds is not None:
+            try:
+                parsed_bucket_seconds = int(query_bucket_seconds)
+            except ValueError:
+                parsed_bucket_seconds = min_bucket_seconds
+
+            if parsed_bucket_seconds in bucket_options:
+                return parsed_bucket_seconds
+
+        return min_bucket_seconds
+
+    if range_changed or current_bucket_seconds not in bucket_options:
+        return min_bucket_seconds
+
+    return current_bucket_seconds
 
 
 def normalize_timestamp_value(value):
@@ -3521,22 +3548,18 @@ def run_app() -> None:
             bucket for bucket in BUCKET_SECONDS if bucket >= min_bucket_seconds
         ]
 
-        if "dashboard_bucket_seconds" not in st.session_state:
-            query_bucket_seconds = get_query_param("bucket")
-            default_bucket_seconds = 600
-            if query_bucket_seconds is not None:
-                try:
-                    parsed_bucket_seconds = int(query_bucket_seconds)
-                except ValueError:
-                    parsed_bucket_seconds = 600
-                if parsed_bucket_seconds in bucket_options:
-                    default_bucket_seconds = parsed_bucket_seconds
-            if default_bucket_seconds < min_bucket_seconds:
-                default_bucket_seconds = min_bucket_seconds
-            st.session_state["dashboard_bucket_seconds"] = default_bucket_seconds
-
-        if st.session_state["dashboard_bucket_seconds"] < min_bucket_seconds:
-            st.session_state["dashboard_bucket_seconds"] = min_bucket_seconds
+        previous_bucket_range_name = st.session_state.get(
+            "dashboard_bucket_range_name",
+        )
+        current_bucket_seconds = st.session_state.get("dashboard_bucket_seconds")
+        st.session_state["dashboard_bucket_seconds"] = resolve_dashboard_bucket_seconds(
+            current_bucket_seconds=current_bucket_seconds,
+            query_bucket_seconds=get_query_param("bucket"),
+            bucket_options=bucket_options,
+            min_bucket_seconds=min_bucket_seconds,
+            range_changed=previous_bucket_range_name != range_name,
+        )
+        st.session_state["dashboard_bucket_range_name"] = range_name
 
         bucket_seconds = st.selectbox(
             text["bucket_minutes"],

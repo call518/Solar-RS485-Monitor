@@ -608,6 +608,21 @@ Open the displayed Streamlit URL in a browser. The sidebar lets you select the d
 
 The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, 30 minute, 1 hour, 3 hour, 6 hour, or 12 hour buckets before charting to reduce database transfer and browser rendering cost. The minimum selectable bucket is raised dynamically by selected range and `DASHBOARD_MAX_POINTS` so oversized result sets are avoided. Monthly and yearly generation charts use their own fixed config-only windows instead of the selected sidebar range.
 
+Minimum aggregation interval by selected range with the default `DASHBOARD_MAX_POINTS=10000`:
+
+| Range | Config value | Minimum interval | Selectable intervals |
+| --- | --- | --- | --- |
+| Last 1 hour | `Last 1 hour` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 6 hours | `Last 6 hours` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 24 hours | `Last 24 hours` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Today | `Today` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 2 days | `Last 2 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 3 days | `Last 3 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 7 days | `Last 7 days` | 1 minute | 1 minute, 2 minutes, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 30 days | `Last 30 days` | 5 minutes | 5 minutes, 10 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 90 days | `Last 90 days` | 15 minutes | 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+| Last 6 months | `Last 6 months` | 30 minutes | 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours |
+
 Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The default sidebar auto-refresh option can be set with `DASHBOARD_AUTO_REFRESH_SECONDS`, and users can still change it from the sidebar while running. The selected interval refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
 
 ```bash
