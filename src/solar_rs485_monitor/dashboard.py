@@ -1975,6 +1975,23 @@ def build_nonzero_metric_domain(values) -> list[float] | None:
     return [float(lower), float(upper)]
 
 
+def build_chart_data_zoom() -> list[dict[str, object]]:
+    return [
+        {
+            "type": "inside",
+            "xAxisIndex": 0,
+            "filterMode": "none",
+        },
+        {
+            "type": "slider",
+            "xAxisIndex": 0,
+            "filterMode": "none",
+            "height": 24,
+            "bottom": 8,
+        },
+    ]
+
+
 def render_area_echart(
     st,
     chart_df,
@@ -2046,7 +2063,7 @@ def render_area_echart(
 
     options = {
         "animation": False,
-        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 76},
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
@@ -2054,6 +2071,7 @@ def render_area_echart(
             "min": y_min,
             "max": y_max,
         },
+        "dataZoom": build_chart_data_zoom(),
         "tooltip": {
             "trigger": "axis",
             "axisPointer": {"type": "line"},
@@ -2155,7 +2173,7 @@ def render_total_generation_echart(
     options = {
         # Auto refresh re-runs the script; disable animation to reduce visual flicker.
         "animation": False,
-        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 76},
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
@@ -2165,6 +2183,7 @@ def render_total_generation_echart(
             "minInterval": 1,
             "axisLabel": {"formatter": "{value}"},
         },
+        "dataZoom": build_chart_data_zoom(),
         "tooltip": {
             "trigger": "axis",
             "axisPointer": {"type": "line"},
@@ -2268,9 +2287,10 @@ def render_bar_chart(
 
     options = {
         "animation": False,
-        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 76},
         "xAxis": x_axis,
         "yAxis": y_axis,
+        "dataZoom": build_chart_data_zoom(),
         "tooltip": {
             "trigger": "axis",
             "axisPointer": {"type": "shadow"},
@@ -2897,13 +2917,14 @@ def render_daily_generation_chart(
 
     options = {
         "animation": False,
-        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 76},
         "xAxis": x_axis,
         "yAxis": {
             "type": "value",
             "scale": True,
             "min": 0,
         },
+        "dataZoom": build_chart_data_zoom(),
         "tooltip": {
             "trigger": "axis",
             "axisPointer": {"type": "shadow"},
@@ -3019,7 +3040,7 @@ def render_period_generation_chart(
 
     options = {
         "animation": False,
-        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 56},
+        "grid": {"left": 70, "right": 24, "top": 24, "bottom": 76},
         "xAxis": {
             "type": "category",
             "data": categories,
@@ -3038,6 +3059,7 @@ def render_period_generation_chart(
             "scale": True,
             "min": 0,
         },
+        "dataZoom": build_chart_data_zoom(),
         "tooltip": {
             "trigger": "axis",
             "axisPointer": {"type": "shadow"},
