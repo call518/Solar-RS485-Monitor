@@ -2052,13 +2052,11 @@ def render_area_echart(
         x_axis["max"] = until.isoformat()
 
     color = get_chart_color(metric_name, AREA_CHART_COLORS.get(metric_name, "#3b82f6"))
-    latest_timestamp = chart_data["timestamp"].max().isoformat()
-    latest_value = float(chart_data["value"].iloc[-1])
     chart_key = (
         f"echart_area_{metric_name}_"
-        f"{latest_timestamp}_"
-        f"{latest_value:.6f}_"
-        f"{len(chart_data)}"
+        f"{since.isoformat()}_"
+        f"{until.isoformat()}_"
+        f"{int(fixed_time_axis)}"
     )
 
     options = {
@@ -2095,6 +2093,7 @@ def render_area_echart(
         options=options,
         height="320px",
         renderer="svg",
+        replace_merge=["series"],
         key=chart_key,
     )
 
@@ -2161,13 +2160,11 @@ def render_total_generation_echart(
         x_axis["min"] = since.isoformat()
         x_axis["max"] = until.isoformat()
 
-    latest_timestamp = echart_data["timestamp"].max().isoformat()
-    latest_value = float(echart_data["value"].iloc[-1])
     chart_key = (
         "echart_total_generation_"
-        f"{latest_timestamp}_"
-        f"{latest_value:.6f}_"
-        f"{len(echart_data)}"
+        f"{since.isoformat()}_"
+        f"{until.isoformat()}_"
+        f"{int(fixed_time_axis)}"
     )
 
     options = {
@@ -2208,6 +2205,7 @@ def render_total_generation_echart(
         options=options,
         height="320px",
         renderer="svg",
+        replace_merge=["series"],
         key=chart_key,
     )
 
@@ -2276,13 +2274,11 @@ def render_bar_chart(
         y_axis["minInterval"] = 1
         y_axis["axisLabel"] = {"formatter": "{value}"}
 
-    latest_timestamp = chart_data["timestamp"].max().isoformat()
-    latest_value = float(chart_data["value"].iloc[-1])
     chart_key = (
         f"echart_bar_{metric_name}_"
-        f"{latest_timestamp}_"
-        f"{latest_value:.6f}_"
-        f"{len(chart_data)}"
+        f"{since.isoformat()}_"
+        f"{until.isoformat()}_"
+        f"{int(fixed_time_axis)}"
     )
 
     options = {
@@ -2310,6 +2306,7 @@ def render_bar_chart(
         options=options,
         height="320px",
         renderer="svg",
+        replace_merge=["series"],
         key=chart_key,
     )
 
@@ -2905,13 +2902,10 @@ def render_daily_generation_chart(
         },
     }
 
-    latest_timestamp = categories[-1]
-    latest_value = float(values[-1])
     chart_key = (
         "echart_daily_generation_"
-        f"{latest_timestamp}_"
-        f"{latest_value:.6f}_"
-        f"{len(categories)}_"
+        f"{since.isoformat()}_"
+        f"{until.isoformat()}_"
         f"{int(fixed_time_axis)}"
     )
 
@@ -2950,6 +2944,7 @@ def render_daily_generation_chart(
         options=options,
         height="300px",
         renderer="svg",
+        replace_merge=["series"],
         key=chart_key,
     )
 
@@ -3033,8 +3028,8 @@ def render_period_generation_chart(
 
     chart_key = (
         f"{chart_key_prefix}_"
+        f"{categories[0]}_"
         f"{categories[-1]}_"
-        f"{values[-1]:.6f}_"
         f"{len(categories)}"
     )
 
@@ -3080,6 +3075,7 @@ def render_period_generation_chart(
         options=options,
         height="300px",
         renderer="svg",
+        replace_merge=["series"],
         key=chart_key,
     )
 
