@@ -34,7 +34,7 @@ DASHBOARD_AUTO_REFRESH_SECONDS="60"
 # [Optional] Maximum number of aggregated points queried for dashboard charts.
 # [Optional] Dashboard UI does not expose this value; set it in config only.
 # [Optional] Allowed range: 100..300000
-DASHBOARD_MAX_POINTS="10000"
+DASHBOARD_MAX_POINTS="500"
 # [Optional] Default time axis scale in dashboard sidebar.
 # [Optional] Supported values (case-insensitive): fixed, auto
 DASHBOARD_TIME_AXIS_MODE="auto"
