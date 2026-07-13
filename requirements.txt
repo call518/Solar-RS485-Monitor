@@ -8,7 +8,7 @@ cachetools==7.1.4
 certifi==2026.6.17
 cffi==2.0.0
 cfgv==3.5.0
-charset-normalizer==3.4.7
+charset-normalizer==3.4.9
 click==8.4.2
 cryptography==49.0.0
 distlib==0.4.3
