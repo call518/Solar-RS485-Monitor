@@ -106,6 +106,7 @@ UI_TEXT = {
         "x_axis_mode_fixed": "고정 스케일",
         "x_axis_mode_auto": "자동 스케일",
         "bucket_minutes": "집계 단위",
+        "refresh_dashboard": "Refresh",
         "max_points": "최대 조회 포인트 수",
         "aggregate_caption": (
             "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
@@ -161,6 +162,7 @@ UI_TEXT = {
         "x_axis_mode_fixed": "Fixed scale",
         "x_axis_mode_auto": "Auto scale",
         "bucket_minutes": "Aggregation interval",
+        "refresh_dashboard": "Refresh",
         "max_points": "Max chart points",
         "aggregate_caption": (
             "This limits the maximum number of {bucket} aggregated chart "
@@ -1099,6 +1101,21 @@ def render_cookie_script(st, token: str | None, max_age: int) -> None:
         """,
         height=0,
     )
+
+
+def reset_dashboard_sidebar_state(st) -> None:
+    for key in (
+        "dashboard_lang",
+        "dashboard_lang_selector",
+        "dashboard_start_date",
+        "dashboard_end_date",
+        "dashboard_bucket_seconds",
+        "dashboard_bucket_scope_key",
+        "dashboard_refresh_seconds",
+        "dashboard_axis_mode",
+    ):
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 def env_bool_text(name: str, default: str) -> str:
@@ -3535,6 +3552,15 @@ def run_app() -> None:
             current_lang = get_dashboard_language()
             st.session_state["dashboard_lang"] = current_lang
 
+        if st.button(
+            UI_TEXT[current_lang]["refresh_dashboard"],
+            use_container_width=True,
+        ):
+            reset_dashboard_sidebar_state(st)
+            if hasattr(st, "query_params"):
+                st.query_params.clear()
+            st.rerun()
+
         language_choice = st.selectbox(
             UI_TEXT[current_lang]["language"],
             ["ko", "en"],
@@ -3545,8 +3571,6 @@ def run_app() -> None:
 
         if language_choice != current_lang:
             st.session_state["dashboard_lang"] = language_choice
-            if hasattr(st, "query_params"):
-                st.query_params["lang"] = language_choice
             st.rerun()
 
         lang = st.session_state["dashboard_lang"]
@@ -3668,48 +3692,6 @@ def run_app() -> None:
             format_func=lambda value: text[f"x_axis_mode_{value}"],
         )
         fixed_time_axis = axis_mode == "fixed"
-
-        if hasattr(st, "query_params"):
-            desired_query_params = {
-                "lang": lang,
-                "start": str(st.session_state["dashboard_start_date"]),
-                "end": str(st.session_state["dashboard_end_date"]),
-                "bucket": str(bucket_seconds),
-                "refresh": str(refresh_seconds),
-                "axis": axis_mode,
-            }
-            managed_query_param_keys = {
-                *desired_query_params.keys(),
-                "mode",
-                "range",
-            }
-            obsolete_query_params_present = any(
-                get_query_param(key) is not None for key in ("mode", "range")
-            )
-            current_managed_query_params = {
-                key: get_query_param(key) for key in desired_query_params
-            }
-            if (
-                current_managed_query_params != desired_query_params
-                or obsolete_query_params_present
-            ):
-                merged_query_params: dict[str, str] = {}
-                if hasattr(st.query_params, "to_dict"):
-                    existing_query_params = st.query_params.to_dict()
-                    for key, value in existing_query_params.items():
-                        if key in managed_query_param_keys:
-                            continue
-                        if isinstance(value, list):
-                            merged_query_params[key] = str(value[0]) if value else ""
-                        else:
-                            merged_query_params[key] = str(value)
-
-                merged_query_params.update(desired_query_params)
-                if hasattr(st.query_params, "from_dict"):
-                    st.query_params.from_dict(merged_query_params)
-                else:
-                    for key, value in merged_query_params.items():
-                        st.query_params[key] = value
 
         render_dashboard_logout(st, text)
 
