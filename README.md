@@ -8,6 +8,12 @@ The current parser and protocol defaults are validated for InoElectric IEPVS-3.5
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, Supabase (PostgreSQL), and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
+## Architecture Diagram
+
+<a href="https://deepwiki.com/call518/Solar-RS485-Monitor" target="_blank" rel="noopener noreferrer">DeepWiki</a>
+
+![Architecture Diagram](images/DeepWiki-Architecture-Diagram.png)
+
 ## Start Here
 
 - Check prerequisites in [Setup](#setup) and [Configuration File](#configuration-file).
