@@ -106,7 +106,7 @@ UI_TEXT = {
         "x_axis_mode_fixed": "고정 스케일",
         "x_axis_mode_auto": "자동 스케일",
         "bucket_minutes": "집계 단위",
-        "refresh_dashboard": "Refresh",
+        "reset_charts": "챠트 초기화",
         "max_points": "최대 조회 포인트 수",
         "aggregate_caption": (
             "이 값은 차트에 표시할 {bucket} 단위 집계 데이터의 "
@@ -162,7 +162,7 @@ UI_TEXT = {
         "x_axis_mode_fixed": "Fixed scale",
         "x_axis_mode_auto": "Auto scale",
         "bucket_minutes": "Aggregation interval",
-        "refresh_dashboard": "Refresh",
+        "reset_charts": "Reset Charts",
         "max_points": "Max chart points",
         "aggregate_caption": (
             "This limits the maximum number of {bucket} aggregated chart "
@@ -1103,7 +1103,7 @@ def render_cookie_script(st, token: str | None, max_age: int) -> None:
     )
 
 
-def reset_dashboard_sidebar_state(st) -> None:
+def reset_dashboard_chart_options(st) -> None:
     for key in (
         "dashboard_lang",
         "dashboard_lang_selector",
@@ -3255,6 +3255,17 @@ def render_dashboard_body(
             render_latest_timestamp(latest["timestamp"], text, display_timezone),
             unsafe_allow_html=True,
         )
+        st.markdown('<div style="height: 2.35rem;"></div>', unsafe_allow_html=True)
+        reset_chart_columns = st.columns([0.20, 0.72])
+        with reset_chart_columns[0]:
+            if st.button(
+                text["reset_charts"],
+                use_container_width=True,
+            ):
+                reset_dashboard_chart_options(st)
+                if hasattr(st, "query_params"):
+                    st.query_params.clear()
+                st.rerun()
     summary_columns[1].markdown(
         f"""
         <div style="font-size: 0.875rem; margin-bottom: 0.25rem;">{text["status"]}</div>
@@ -3280,7 +3291,7 @@ def render_dashboard_body(
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div style="height: 1.25rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     st.subheader(text["latest_snapshot"])
     if daily_generation_df is not None:
         generation_snapshot = build_generation_snapshot(
@@ -3551,15 +3562,6 @@ def run_app() -> None:
         if current_lang not in {"ko", "en"}:
             current_lang = get_dashboard_language()
             st.session_state["dashboard_lang"] = current_lang
-
-        if st.button(
-            UI_TEXT[current_lang]["refresh_dashboard"],
-            use_container_width=True,
-        ):
-            reset_dashboard_sidebar_state(st)
-            if hasattr(st, "query_params"):
-                st.query_params.clear()
-            st.rerun()
 
         language_choice = st.selectbox(
             UI_TEXT[current_lang]["language"],
