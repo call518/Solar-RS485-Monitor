@@ -88,7 +88,7 @@ twine==6.2.0
 typing_extensions==4.16.0
 tzdata==2026.2
 urllib3==2.7.0
-uvicorn==0.50.0
+uvicorn==0.51.0
 virtualenv==21.5.1
 watchdog==6.0.0
 websockets==16.0
