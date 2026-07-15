@@ -39,6 +39,8 @@ DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DEFAULT_DASHBOARD_MAX_POINTS = 10000
 DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
 DEFAULT_DASHBOARD_RANGE = "Last 2 days"
+DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS = 14
+DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS = 16
 DEFAULT_DASHBOARD_MONTHLY_GENERATION_MONTHS = 12
 DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS = 5
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
@@ -138,8 +140,10 @@ UI_TEXT = {
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 기간의 {bucket} 단위 집계값을 표시합니다.",
         "daily_generation_chart": "일일 발전량 (kWh/day)",
+        "daily_generation_scope": "(조회 종료일 기준 최소 {days}일 표시)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
         "weekly_generation_chart": "주간 발전량 (kWh/week)",
+        "weekly_generation_scope": "(조회 종료일 기준 최소 {weeks}주 표시)",
         "weekly_generation_empty": "선택한 범위에 주간 발전량 데이터가 없습니다.",
         "monthly_generation_chart": "월간 발전량 (kWh/month)",
         "monthly_generation_scope": "(최근 {months}개월 데이터 기준)",
@@ -196,8 +200,10 @@ UI_TEXT = {
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected date range.",
         "daily_generation_chart": "Daily Generation (kWh/day)",
+        "daily_generation_scope": "Minimum display: {days} days relative to the selected end date.",
         "daily_generation_empty": "No daily generation data in the selected date range.",
         "weekly_generation_chart": "Weekly Generation (kWh/week)",
+        "weekly_generation_scope": "Minimum display: {weeks} weeks relative to the selected end date.",
         "weekly_generation_empty": "No weekly generation data in the selected date range.",
         "monthly_generation_chart": "Monthly Generation (kWh/month)",
         "monthly_generation_scope": "Monthly chart separately queries the last {months} months.",
@@ -1268,6 +1274,61 @@ def get_recent_year_labels(
     return [str(year) for year in range(until_year - years + 1, until_year + 1)]
 
 
+def get_day_generation_start_date(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    minimum_days: int,
+) -> date:
+    since_date = since.astimezone(display_timezone).date()
+    until_date = until.astimezone(display_timezone).date()
+    minimum_start_date = until_date - timedelta(days=minimum_days - 1)
+    return min(since_date, minimum_start_date)
+
+
+def get_day_generation_since(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    minimum_days: int,
+) -> datetime:
+    start_date = get_day_generation_start_date(
+        since=since,
+        until=until,
+        display_timezone=display_timezone,
+        minimum_days=minimum_days,
+    )
+    start_local = datetime.combine(
+        start_date,
+        datetime.min.time(),
+        tzinfo=display_timezone,
+    )
+    return start_local.astimezone(timezone.utc)
+
+
+def get_day_generation_labels(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    minimum_days: int,
+) -> list[str]:
+    start_date = get_day_generation_start_date(
+        since=since,
+        until=until,
+        display_timezone=display_timezone,
+        minimum_days=minimum_days,
+    )
+    end_date = until.astimezone(display_timezone).date()
+    labels = []
+    current_date = start_date
+
+    while current_date <= end_date:
+        labels.append(current_date.strftime("%Y-%m-%d"))
+        current_date += timedelta(days=1)
+
+    return labels
+
+
 def get_week_label(local_date: date) -> str:
     iso_year, iso_week, _ = local_date.isocalendar()
     return f"{iso_year:04d}-W{iso_week:02d}"
@@ -1281,9 +1342,12 @@ def get_week_generation_labels(
     since: datetime,
     until: datetime,
     display_timezone: ZoneInfo,
+    minimum_weeks: int,
 ) -> list[str]:
     start_week = get_week_start(since.astimezone(display_timezone).date())
     end_week = get_week_start(until.astimezone(display_timezone).date())
+    minimum_start_week = end_week - timedelta(weeks=minimum_weeks - 1)
+    start_week = min(start_week, minimum_start_week)
     labels = []
     current_week = start_week
 
@@ -1292,6 +1356,24 @@ def get_week_generation_labels(
         current_week += timedelta(days=7)
 
     return labels
+
+
+def get_week_generation_since(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    minimum_weeks: int,
+) -> datetime:
+    start_week = get_week_start(since.astimezone(display_timezone).date())
+    end_week = get_week_start(until.astimezone(display_timezone).date())
+    minimum_start_week = end_week - timedelta(weeks=minimum_weeks - 1)
+    start_week = min(start_week, minimum_start_week)
+    start_local = datetime.combine(
+        start_week,
+        datetime.min.time(),
+        tzinfo=display_timezone,
+    )
+    return start_local.astimezone(timezone.utc)
 
 
 def get_min_bucket_seconds_for_duration(
@@ -2916,20 +2998,12 @@ def render_daily_generation_chart(
             day_label = timestamp.astimezone(display_timezone).strftime("%Y-%m-%d")
             value_by_day[day_label] = value_by_day.get(day_label, 0.0) + float(row["value"])
 
-    if fixed_time_axis:
-        end_day = until.astimezone(display_timezone).date()
-        duration_seconds = max(
-            0.0,
-            (until.astimezone(timezone.utc) - since.astimezone(timezone.utc)).total_seconds(),
-        )
-        day_count = max(1, math.ceil(duration_seconds / 86400.0))
-        start_day = end_day - timedelta(days=day_count - 1)
-        categories = [
-            (start_day + timedelta(days=offset)).strftime("%Y-%m-%d")
-            for offset in range(day_count)
-        ]
-    else:
-        categories = sorted(value_by_day.keys())
+    categories = get_day_generation_labels(
+        since=since,
+        until=until,
+        display_timezone=display_timezone,
+        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+    )
 
     if not categories:
         return
@@ -3377,63 +3451,92 @@ def render_dashboard_body(
                 if daily_generation_error is not None:
                     st.warning(str(daily_generation_error))
                 else:
-                    daily_df = filter_daily_generation_by_range(
-                        daily_generation_df,
+                    daily_generation_since = get_day_generation_since(
                         since=since,
                         until=display_until,
                         display_timezone=display_timezone,
+                        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
                     )
-                    if daily_df.empty and not fixed_time_axis:
-                        st.caption(text["daily_generation_empty"])
-                    else:
+                    weekly_generation_since = get_week_generation_since(
+                        since=since,
+                        until=display_until,
+                        display_timezone=display_timezone,
+                        minimum_weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                    )
+                    daily_df = filter_daily_generation_by_range(
+                        daily_generation_df,
+                        since=daily_generation_since,
+                        until=display_until,
+                        display_timezone=display_timezone,
+                    )
+                    weekly_daily_df = filter_daily_generation_by_range(
+                        daily_generation_df,
+                        since=weekly_generation_since,
+                        until=display_until,
+                        display_timezone=display_timezone,
+                    )
+                    weekly_raw_df = aggregate_generation_by_period(
+                        daily_df=weekly_daily_df,
+                        display_timezone=display_timezone,
+                        period="week",
+                    )
+                    weekly_df = fill_period_generation_labels(
+                        weekly_raw_df,
+                        get_week_generation_labels(
+                            since=since,
+                            until=display_until,
+                            display_timezone=display_timezone,
+                            minimum_weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                        ),
+                    )
+
+                    daily_col, weekly_col = st.columns(2)
+                    with daily_col:
                         st.markdown(f"#### {text['daily_generation_chart']}")
-                        daily_stats = format_daily_generation_stats(daily_df)
-                        if daily_stats:
-                            st.caption(daily_stats)
+                        st.caption(
+                            text["daily_generation_scope"].format(
+                                days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+                            )
+                        )
+                        if daily_df.empty:
+                            st.caption(text["daily_generation_empty"])
+                        else:
+                            daily_stats = format_daily_generation_stats(daily_df)
+                            if daily_stats:
+                                st.caption(daily_stats)
                         render_daily_generation_chart(
                             st=st,
                             daily_df=daily_df,
                             title=text["daily_generation_chart"],
-                            since=since,
+                            since=daily_generation_since,
                             until=display_until,
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
 
-                    weekly_raw_df = aggregate_generation_by_period(
-                        daily_df=daily_df,
-                        display_timezone=display_timezone,
-                        period="week",
-                    )
-                    if fixed_time_axis:
-                        weekly_df = fill_period_generation_labels(
-                            weekly_raw_df,
-                            get_week_generation_labels(
-                                since=since,
-                                until=display_until,
-                                display_timezone=display_timezone,
+                    with weekly_col:
+                        st.markdown(f"#### {text['weekly_generation_chart']}")
+                        st.caption(
+                            text["weekly_generation_scope"].format(
+                                weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                            )
+                        )
+                        if weekly_raw_df.empty:
+                            st.caption(text["weekly_generation_empty"])
+                        else:
+                            weekly_stats = format_period_generation_stats(weekly_df)
+                            if weekly_stats:
+                                st.caption(weekly_stats)
+                        render_period_generation_chart(
+                            st=st,
+                            period_df=weekly_df,
+                            title=text["weekly_generation_chart"],
+                            chart_key_prefix="echart_weekly_generation",
+                            color=get_chart_color(
+                                "weekly_generation",
+                                GENERATION_CHART_COLORS["weekly_generation"],
                             ),
                         )
-                    else:
-                        weekly_df = weekly_raw_df
-
-                    st.markdown(f"#### {text['weekly_generation_chart']}")
-                    if weekly_raw_df.empty:
-                        st.caption(text["weekly_generation_empty"])
-                    else:
-                        weekly_stats = format_period_generation_stats(weekly_df)
-                        if weekly_stats:
-                            st.caption(weekly_stats)
-                    render_period_generation_chart(
-                        st=st,
-                        period_df=weekly_df,
-                        title=text["weekly_generation_chart"],
-                        chart_key_prefix="echart_weekly_generation",
-                        color=get_chart_color(
-                            "weekly_generation",
-                            GENERATION_CHART_COLORS["weekly_generation"],
-                        ),
-                    )
 
                     monthly_daily_df = filter_daily_generation_by_range(
                         daily_generation_df,
