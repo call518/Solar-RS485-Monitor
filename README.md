@@ -405,6 +405,89 @@ Use a different value if your inverter manual specifies a different request fram
 INVERTER_VERIFY_CRC="true"
 ```
 
+## Inverter/REMS Data Packet Protocol
+
+This section summarizes the protocol currently supported by the parser for InoElectric IEPVS-3.5-G1/G2. It keeps the request frame, response frame, data payload, and `fault_code` bit interpretation in one place.
+
+Other inverter models can use different request commands, response lengths, data offsets, scaling rules, and CRC byte order. Do not assume the layout below applies to another model without checking that product's manual.
+
+### Request Frame
+
+The tested request frame is `7e 01 01 d1 88`.
+
+| Byte | Example value | Meaning |
+| ---: | ---: | --- |
+| 0 | `0x7E` | SOP, frame start |
+| 1 | `0x01` | Inverter ID |
+| 2 | `0x01` | Request command |
+| 3-4 | `0xD1 0x88` | CRC16 |
+
+### Response Frame
+
+The default configuration expects a 33-byte response frame with a 26-byte data payload.
+
+| Byte | Length | Meaning | Current parser validation |
+| ---: | ---: | --- | --- |
+| 0 | 1 | SOP, frame start | `0x7E` |
+| 1 | 1 | Inverter ID | Must match `INVERTER_ID` |
+| 2 | 1 | Response command | `0x02` |
+| 3-4 | 2 | Data length | `INVERTER_DATA_LENGTH`, default `26` |
+| 5-30 | 26 | Data payload | Interpreted by the payload table below |
+| 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, default `LH` |
+
+Multi-byte values are decoded as big-endian unsigned integers. CRC is calculated as Modbus CRC16, and `LH` means low byte followed by high byte.
+
+### Data Payload
+
+| Output field | Data bytes | Scale | Unit | Description |
+| --- | ---: | ---: | --- | --- |
+| `@timestamp` | N/A | N/A | UTC ISO 8601 | UTC collection timestamp |
+| `inverter_name` | N/A | N/A | text | Name from `INVERTER_NAME` |
+| `inverter_id` | frame byte 1 | 1 | numeric ID | Inverter ID returned by the device |
+| `input_dc_voltage_v` | data 0-1 | 1 | V | DC input voltage from the PV side |
+| `input_dc_current_a` | data 2-3 | 1 | A | DC input current from the PV side |
+| `input_dc_power_w` | data 4-5 | 1 | W | DC input power from the PV side |
+| `output_ac_voltage_v` | data 6-7 | 1 | V | Grid-side AC output voltage |
+| `output_ac_current_a` | data 8-9 | 1 | A | Grid-side AC output current |
+| `output_ac_power_w` | data 10-11 | 1 | W | Grid-side AC output power |
+| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | Grid-side AC output power factor |
+| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
+| `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
+| `fault_code` | data 24-25 | 1 | code | Raw fault code |
+| `raw_frame_hex` | full frame | N/A | hex bytes | Raw response frame for debugging |
+
+### fault_code Bit Interpretation
+
+`fault_code` is a 2-byte unsigned bitmask. One response can contain more than one active bit at the same time, so do not interpret it as a single enum value.
+
+Simple rules:
+
+- If only one bit is active, `fault_code` equals that bit value.
+- If multiple bits are active, `fault_code` is the sum of active bit values.
+- Bit 0 is the operation-state bit. `1` means not operating, and `0` means operating.
+- Fault-event detection uses Bit 1+.
+
+| Bit | Mask (hex) | Value (decimal, single-bit) | Meaning (when `1`) |
+| ---: | ---: | ---: | --- |
+| 0 | `0x0001` | 1 | Inverter not operating |
+| 1 | `0x0002` | 2 | PV over-voltage |
+| 2 | `0x0004` | 4 | PV under-voltage |
+| 3 | `0x0008` | 8 | PV over-current |
+| 4 | `0x0010` | 16 | Inverter IGBT error |
+| 5 | `0x0020` | 32 | Inverter over-temperature |
+| 6 | `0x0040` | 64 | Grid over-voltage |
+| 7 | `0x0080` | 128 | Grid under-voltage |
+| 8 | `0x0100` | 256 | Grid over-current |
+| 9 | `0x0200` | 512 | Grid over-frequency |
+| 10 | `0x0400` | 1024 | Grid under-frequency |
+| 11 | `0x0800` | 2048 | Islanding / blackout |
+| 12 | `0x1000` | 4096 | Ground fault (leakage) |
+
+Examples:
+
+- `fault_code = 2`: Bit 1 only, PV over-voltage
+- `fault_code = 72`: Bit 3 + Bit 6, `8 + 64`
+
 ## Run
 
 Show the installed version:
@@ -914,64 +997,7 @@ The collector creates the header row automatically if the worksheet is empty. If
 
 The script prints one JSON object per collection attempt.
 
-## Collected Metrics
-
-For InoElectric IEPVS-3.5-G1/G2, the current parser interprets the response data payload as follows. Multi-byte values are decoded as big-endian unsigned integers.
-
-| Output field | Data bytes | Scale | Unit | Description |
-| --- | ---: | ---: | --- | --- |
-| `@timestamp` | N/A | N/A | UTC ISO 8601 | UTC collection timestamp |
-| `inverter_name` | N/A | N/A | text | Name from `INVERTER_NAME` |
-| `inverter_id` | frame byte 1 | 1 | numeric ID | Inverter ID returned by the device |
-| `input_dc_voltage_v` | data 0-1 | 1 | V | DC input voltage from the PV side |
-| `input_dc_current_a` | data 2-3 | 1 | A | DC input current from the PV side |
-| `input_dc_power_w` | data 4-5 | 1 | W | DC input power from the PV side |
-| `output_ac_voltage_v` | data 6-7 | 1 | V | Grid-side AC output voltage |
-| `output_ac_current_a` | data 8-9 | 1 | A | Grid-side AC output current |
-| `output_ac_power_w` | data 10-11 | 1 | W | Grid-side AC output power |
-| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | Grid-side AC output power factor |
-| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | Grid-side AC output frequency |
-| `total_generation_kwh` | data 16-23 | 0.001 | kWh | Total accumulated generation |
-| `fault_code` | data 24-25 | 1 | code | Raw fault code |
-| `raw_frame_hex` | full frame | N/A | hex bytes | Raw response frame for debugging |
-
-### fault_code Bit Mapping
-
-`fault_code` is the decimal representation of a 2-byte unsigned fault bitmask.
-
-One response can contain more than one active fault at the same time. In other
-words, this is not a single enum value; it is a bitmask where multiple bits can
-be `1` in a single `fault_code`.
-
-Simple rules:
-
-- If only one bit is active, `fault_code` equals that bit value.
-- If multiple bits are active, `fault_code` is the sum of active bit values.
-
-| Bit | Mask (hex) | Value (decimal, single-bit) | Meaning (when `1`) |
-| ---: | ---: | ---: | --- |
-| 0 | `0x0001` | 1 | Inverter not operating |
-| 1 | `0x0002` | 2 | PV over-voltage |
-| 2 | `0x0004` | 4 | PV under-voltage |
-| 3 | `0x0008` | 8 | PV over-current |
-| 4 | `0x0010` | 16 | Inverter IGBT error |
-| 5 | `0x0020` | 32 | Inverter over-temperature |
-| 6 | `0x0040` | 64 | Grid over-voltage |
-| 7 | `0x0080` | 128 | Grid under-voltage |
-| 8 | `0x0100` | 256 | Grid over-current |
-| 9 | `0x0200` | 512 | Grid over-frequency |
-| 10 | `0x0400` | 1024 | Grid under-frequency |
-| 11 | `0x0800` | 2048 | Islanding / blackout |
-| 12 | `0x1000` | 4096 | Ground fault (leakage) |
-
-Simple examples:
-
-- Single active fault: `fault_code = 2` means Bit 1 only (PV over-voltage)
-- Multiple active faults: `fault_code = 72` means Bit 3 + Bit 6
-  (`8 + 64` = PV over-current + Grid over-voltage)
-
-Bit 0 is the operation-state bit: `1` means not operating, `0` means operating.
-Fault-event detection uses Bit 1+.
+Output fields and `fault_code` bit interpretation are collected in [Inverter/REMS Data Packet Protocol](#inverterrems-data-packet-protocol).
 
 Successful reads include fields such as:
 

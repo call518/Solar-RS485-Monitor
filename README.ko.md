@@ -403,6 +403,89 @@ INVERTER_REQUEST_HEX="7e0101d188"
 INVERTER_VERIFY_CRC="true"
 ```
 
+## 인버터/REMS 데이터 패킷 규약
+
+이 섹션은 현재 파서가 지원하는 InoElectric IEPVS-3.5-G1/G2 기준의 핵심 통신 규약입니다. 요청 프레임, 응답 프레임, 데이터 payload, `fault_code` 비트 해석을 한곳에 모았습니다.
+
+다른 인버터 모델은 요청 명령, 응답 길이, 데이터 오프셋, 스케일, CRC 순서가 다를 수 있으므로 아래 값을 그대로 가정하면 안 됩니다.
+
+### 요청 프레임
+
+동작 테스트한 요청 프레임은 `7e 01 01 d1 88`입니다.
+
+| 바이트 | 예시 값 | 의미 |
+| ---: | ---: | --- |
+| 0 | `0x7E` | SOP, 프레임 시작 |
+| 1 | `0x01` | 인버터 ID |
+| 2 | `0x01` | 요청 command |
+| 3-4 | `0xD1 0x88` | CRC16 |
+
+### 응답 프레임
+
+기본 설정은 전체 응답 33바이트, 데이터 payload 26바이트입니다.
+
+| 바이트 | 길이 | 의미 | 현재 파서 검증 |
+| ---: | ---: | --- | --- |
+| 0 | 1 | SOP, 프레임 시작 | `0x7E` |
+| 1 | 1 | 인버터 ID | `INVERTER_ID`와 일치해야 함 |
+| 2 | 1 | 응답 command | `0x02` |
+| 3-4 | 2 | 데이터 길이 | `INVERTER_DATA_LENGTH`, 기본 `26` |
+| 5-30 | 26 | 데이터 payload | 아래 payload 표 기준으로 해석 |
+| 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, 기본 `LH` |
+
+멀티바이트 값은 big-endian unsigned integer로 디코딩합니다. CRC는 Modbus CRC16으로 계산하며, `LH`는 low byte, high byte 순서를 의미합니다.
+
+### 데이터 payload 해석
+
+| 출력 필드 | 데이터 바이트 | 스케일 | 단위 | 설명 |
+| --- | ---: | ---: | --- | --- |
+| `@timestamp` | N/A | N/A | UTC ISO 8601 | UTC 기준 수집 시각 |
+| `inverter_name` | N/A | N/A | text | `INVERTER_NAME` 값 |
+| `inverter_id` | frame byte 1 | 1 | numeric ID | 장치가 반환한 인버터 ID |
+| `input_dc_voltage_v` | data 0-1 | 1 | V | PV 입력 DC 전압 |
+| `input_dc_current_a` | data 2-3 | 1 | A | PV 입력 DC 전류 |
+| `input_dc_power_w` | data 4-5 | 1 | W | PV 입력 DC 전력 |
+| `output_ac_voltage_v` | data 6-7 | 1 | V | 계통 연계 AC 출력 전압 |
+| `output_ac_current_a` | data 8-9 | 1 | A | 계통 연계 AC 출력 전류 |
+| `output_ac_power_w` | data 10-11 | 1 | W | 계통 연계 AC 출력 전력 |
+| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | 계통 연계 AC 출력 역률 |
+| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | 계통 연계 AC 출력 주파수 |
+| `total_generation_kwh` | data 16-23 | 0.001 | kWh | 누적 발전량 |
+| `fault_code` | data 24-25 | 1 | code | 원시 fault 코드 |
+| `raw_frame_hex` | full frame | N/A | hex bytes | 디버깅용 원시 응답 프레임 |
+
+### fault_code 비트 해석
+
+`fault_code`는 2바이트 unsigned 비트마스크입니다. 한 번의 응답에서 1개 이상의 비트가 동시에 활성화될 수 있으므로 단일 enum 값으로 해석하면 안 됩니다.
+
+간단 규칙:
+
+- 단일 비트만 켜진 경우: `fault_code`는 해당 비트의 값과 같습니다.
+- 여러 비트가 동시에 켜진 경우: `fault_code`는 켜진 비트 값들의 합입니다.
+- Bit 0은 운전 상태 비트입니다. `1`은 미작동, `0`은 동작중입니다.
+- 장애 이벤트 판정은 Bit 1 이상을 기준으로 합니다.
+
+| 비트 | 마스크(hex) | 값(10진수, 단일 비트) | 의미 (`1`일 때) |
+| ---: | ---: | ---: | --- |
+| 0 | `0x0001` | 1 | 인버터 미작동 |
+| 1 | `0x0002` | 2 | 태양전지 과전압 |
+| 2 | `0x0004` | 4 | 태양전지 저전압 |
+| 3 | `0x0008` | 8 | 태양전지 과전류 |
+| 4 | `0x0010` | 16 | 인버터 IGBT 에러 |
+| 5 | `0x0020` | 32 | 인버터 과온 |
+| 6 | `0x0040` | 64 | 계통 과전압 |
+| 7 | `0x0080` | 128 | 계통 저전압 |
+| 8 | `0x0100` | 256 | 계통 과전류 |
+| 9 | `0x0200` | 512 | 계통 과주파수 |
+| 10 | `0x0400` | 1024 | 계통 저주파수 |
+| 11 | `0x0800` | 2048 | 단독운전(정전) |
+| 12 | `0x1000` | 4096 | 지락(누전) |
+
+예시:
+
+- `fault_code = 2`: Bit 1만 활성, 태양전지 과전압
+- `fault_code = 72`: Bit 3 + Bit 6 동시 활성, `8 + 64`
+
 ## 실행
 
 설치된 버전을 확인합니다.
@@ -913,63 +996,7 @@ GOOGLE_CLIENT_EMAIL="service-account@your-project-id.iam.gserviceaccount.com"
 
 스크립트는 수집 시도마다 JSON 객체 하나를 출력합니다.
 
-## 수집 메트릭
-
-InoElectric IEPVS-3.5-G1/G2 기준으로 현재 파서는 응답 데이터 페이로드를 아래처럼 해석합니다. 멀티바이트 값은 big-endian unsigned integer로 디코딩합니다.
-
-| 출력 필드 | 데이터 바이트 | 스케일 | 단위 | 설명 |
-| --- | ---: | ---: | --- | --- |
-| `@timestamp` | N/A | N/A | UTC ISO 8601 | UTC 기준 수집 시각 |
-| `inverter_name` | N/A | N/A | text | `INVERTER_NAME` 값 |
-| `inverter_id` | frame byte 1 | 1 | numeric ID | 장치가 반환한 인버터 ID |
-| `input_dc_voltage_v` | data 0-1 | 1 | V | PV 입력 DC 전압 |
-| `input_dc_current_a` | data 2-3 | 1 | A | PV 입력 DC 전류 |
-| `input_dc_power_w` | data 4-5 | 1 | W | PV 입력 DC 전력 |
-| `output_ac_voltage_v` | data 6-7 | 1 | V | 계통 연계 AC 출력 전압 |
-| `output_ac_current_a` | data 8-9 | 1 | A | 계통 연계 AC 출력 전류 |
-| `output_ac_power_w` | data 10-11 | 1 | W | 계통 연계 AC 출력 전력 |
-| `output_ac_power_factor_pct` | data 12-13 | 0.1 | % | 계통 연계 AC 출력 역률 |
-| `output_ac_frequency_hz` | data 14-15 | 0.1 | Hz | 계통 연계 AC 출력 주파수 |
-| `total_generation_kwh` | data 16-23 | 0.001 | kWh | 누적 발전량 |
-| `fault_code` | data 24-25 | 1 | code | 원시 fault 코드 |
-| `raw_frame_hex` | full frame | N/A | hex bytes | 디버깅용 원시 응답 프레임 |
-
-### fault_code 비트 매핑
-
-`fault_code`는 2바이트 unsigned 고장 비트마스크를 10진수로 표현한 값입니다.
-
-한 번의 응답에서 1개 이상의 고장 비트가 동시에 활성화될 수 있습니다.
-즉, 단일 enum 값이 아니라 여러 비트가 동시에 `1`이 될 수 있는 비트마스크입니다.
-
-간단 규칙:
-
-- 단일 비트만 켜진 경우: `fault_code`는 해당 비트의 값과 같습니다.
-- 여러 비트가 동시에 켜진 경우: `fault_code`는 켜진 비트 값들의 합입니다.
-
-| 비트 | 마스크(hex) | 값(10진수, 단일 비트) | 의미 (`1`일 때) |
-| ---: | ---: | ---: | --- |
-| 0 | `0x0001` | 1 | 인버터 미작동 |
-| 1 | `0x0002` | 2 | 태양전지 과전압 |
-| 2 | `0x0004` | 4 | 태양전지 저전압 |
-| 3 | `0x0008` | 8 | 태양전지 과전류 |
-| 4 | `0x0010` | 16 | 인버터 IGBT 에러 |
-| 5 | `0x0020` | 32 | 인버터 과온 |
-| 6 | `0x0040` | 64 | 계통 과전압 |
-| 7 | `0x0080` | 128 | 계통 저전압 |
-| 8 | `0x0100` | 256 | 계통 과전류 |
-| 9 | `0x0200` | 512 | 계통 과주파수 |
-| 10 | `0x0400` | 1024 | 계통 저주파수 |
-| 11 | `0x0800` | 2048 | 단독운전(정전) |
-| 12 | `0x1000` | 4096 | 지락(누전) |
-
-간단 예시:
-
-- 단일 고장 비트: `fault_code = 2`는 Bit 1만 활성(태양전지 과전압)
-- 복수 고장 비트: `fault_code = 72`는 Bit 3 + Bit 6 동시 활성
-  (`8 + 64` = 태양전지 과전류 + 계통 과전압)
-
-Bit 0은 운전 상태 비트이며, `1`은 미작동, `0`은 동작중을 의미합니다.
-장애 이벤트 판정은 Bit 1 이상을 기준으로 합니다.
+출력 필드와 `fault_code` 비트 해석은 위의 [인버터/REMS 데이터 패킷 규약](#인버터rems-데이터-패킷-규약)에 모았습니다.
 
 성공한 읽기 결과 예시:
 
