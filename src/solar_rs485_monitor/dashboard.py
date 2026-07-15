@@ -139,6 +139,8 @@ UI_TEXT = {
         "chart_caption": "각 차트는 선택한 기간의 {bucket} 단위 집계값을 표시합니다.",
         "daily_generation_chart": "일일 발전량 (kWh/day)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
+        "weekly_generation_chart": "주간 발전량 (kWh/week)",
+        "weekly_generation_empty": "선택한 범위에 주간 발전량 데이터가 없습니다.",
         "monthly_generation_chart": "월간 발전량 (kWh/month)",
         "monthly_generation_scope": "(최근 {months}개월 데이터 기준)",
         "monthly_generation_empty": "최근 {months}개월에 월간 발전량 데이터가 없습니다.",
@@ -195,6 +197,8 @@ UI_TEXT = {
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected date range.",
         "daily_generation_chart": "Daily Generation (kWh/day)",
         "daily_generation_empty": "No daily generation data in the selected date range.",
+        "weekly_generation_chart": "Weekly Generation (kWh/week)",
+        "weekly_generation_empty": "No weekly generation data in the selected date range.",
         "monthly_generation_chart": "Monthly Generation (kWh/month)",
         "monthly_generation_scope": "Monthly chart separately queries the last {months} months.",
         "monthly_generation_empty": "No monthly generation data in the last {months} months.",
@@ -307,6 +311,7 @@ AREA_CHART_COLORS = {
 
 GENERATION_CHART_COLORS = {
     "daily_generation": "#0891b2",
+    "weekly_generation": "#f97316",
     "monthly_generation": "#0284c7",
     "yearly_generation": "#0f766e",
 }
@@ -1261,6 +1266,32 @@ def get_recent_year_labels(
 ) -> list[str]:
     until_year = until.astimezone(display_timezone).year
     return [str(year) for year in range(until_year - years + 1, until_year + 1)]
+
+
+def get_week_label(local_date: date) -> str:
+    iso_year, iso_week, _ = local_date.isocalendar()
+    return f"{iso_year:04d}-W{iso_week:02d}"
+
+
+def get_week_start(local_date: date) -> date:
+    return local_date - timedelta(days=local_date.weekday())
+
+
+def get_week_generation_labels(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+) -> list[str]:
+    start_week = get_week_start(since.astimezone(display_timezone).date())
+    end_week = get_week_start(until.astimezone(display_timezone).date())
+    labels = []
+    current_week = start_week
+
+    while current_week <= end_week:
+        labels.append(get_week_label(current_week))
+        current_week += timedelta(days=7)
+
+    return labels
 
 
 def get_min_bucket_seconds_for_duration(
@@ -2989,8 +3020,12 @@ def aggregate_generation_by_period(
         local_dt = value.astimezone(display_timezone)
         if period == "month":
             labels.append(local_dt.strftime("%Y-%m"))
-        else:
+        elif period == "year":
             labels.append(local_dt.strftime("%Y"))
+        elif period == "week":
+            labels.append(get_week_label(local_dt.date()))
+        else:
+            labels.append("")
 
     chart_data["period_label"] = labels
     chart_data = chart_data[chart_data["period_label"] != ""]
@@ -3364,6 +3399,41 @@ def render_dashboard_body(
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
                         )
+
+                    weekly_raw_df = aggregate_generation_by_period(
+                        daily_df=daily_df,
+                        display_timezone=display_timezone,
+                        period="week",
+                    )
+                    if fixed_time_axis:
+                        weekly_df = fill_period_generation_labels(
+                            weekly_raw_df,
+                            get_week_generation_labels(
+                                since=since,
+                                until=display_until,
+                                display_timezone=display_timezone,
+                            ),
+                        )
+                    else:
+                        weekly_df = weekly_raw_df
+
+                    st.markdown(f"#### {text['weekly_generation_chart']}")
+                    if weekly_raw_df.empty:
+                        st.caption(text["weekly_generation_empty"])
+                    else:
+                        weekly_stats = format_period_generation_stats(weekly_df)
+                        if weekly_stats:
+                            st.caption(weekly_stats)
+                    render_period_generation_chart(
+                        st=st,
+                        period_df=weekly_df,
+                        title=text["weekly_generation_chart"],
+                        chart_key_prefix="echart_weekly_generation",
+                        color=get_chart_color(
+                            "weekly_generation",
+                            GENERATION_CHART_COLORS["weekly_generation"],
+                        ),
+                    )
 
                     monthly_daily_df = filter_daily_generation_by_range(
                         daily_generation_df,
