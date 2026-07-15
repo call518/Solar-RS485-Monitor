@@ -409,6 +409,8 @@ INVERTER_VERIFY_CRC="true"
 
 This section summarizes the protocol currently supported by the parser for InoElectric IEPVS-3.5-G1/G2. It keeps the request frame, response frame, data payload, and `fault_code` bit interpretation in one place.
 
+The supported protocol is the Renewable Energy Monitoring System (REMS) protocol.
+
 Other inverter models can use different request commands, response lengths, data offsets, scaling rules, and CRC byte order. Do not assume the layout below applies to another model without checking that product's manual.
 
 ### Request Frame
@@ -418,7 +420,7 @@ The tested request frame is `7e 01 01 d1 88`.
 | Byte | Example value | Meaning |
 | ---: | ---: | --- |
 | 0 | `0x7E` | SOP, frame start |
-| 1 | `0x01` | Inverter ID |
+| 1 | `0x01` | Station number, inverter ID (`0x01`..`0xNN`) |
 | 2 | `0x01` | Request command |
 | 3-4 | `0xD1 0x88` | CRC16 |
 
@@ -429,15 +431,33 @@ The default configuration expects a 33-byte response frame with a 26-byte data p
 | Byte | Length | Meaning | Current parser validation |
 | ---: | ---: | --- | --- |
 | 0 | 1 | SOP, frame start | `0x7E` |
-| 1 | 1 | Inverter ID | Must match `INVERTER_ID` |
+| 1 | 1 | Station number, inverter ID | Must match `INVERTER_ID` |
 | 2 | 1 | Response command | `0x02` |
-| 3-4 | 2 | Data length | `INVERTER_DATA_LENGTH`, default `26` |
+| 3 | 1 | Data length high byte | High byte of data length `0x001A` |
+| 4 | 1 | Data length low byte | Low byte of data length `0x001A` |
 | 5-30 | 26 | Data payload | Interpreted by the payload table below |
 | 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, default `LH` |
 
-Multi-byte values are decoded as big-endian unsigned integers. CRC is calculated as Modbus CRC16, and `LH` means low byte followed by high byte.
+Multi-byte values are decoded as big-endian unsigned integers. CRC is calculated as Modbus CRC16, and `LH` means low byte followed by high byte. The tested request frame and sample response frame in this project use `LH` CRC byte order.
 
-### Data Payload
+### Response Data Layout
+
+The official manual defines the response data in the following 26-byte payload order. The current parser uses the same order.
+
+| Order | Manual item | Data bytes | Length | Output field | Interpretation |
+| ---: | --- | ---: | ---: | --- | --- |
+| 1 | PV voltage | data 0-1 | 2 byte | `input_dc_voltage_v` | DC input voltage from the PV side |
+| 2 | PV current | data 2-3 | 2 byte | `input_dc_current_a` | DC input current from the PV side |
+| 3 | PV output | data 4-5 | 2 byte | `input_dc_power_w` | DC input power from the PV side |
+| 4 | Grid voltage | data 6-7 | 2 byte | `output_ac_voltage_v` | Grid-side AC output voltage |
+| 5 | Grid current | data 8-9 | 2 byte | `output_ac_current_a` | Grid-side AC output current |
+| 6 | Current output | data 10-11 | 2 byte | `output_ac_power_w` | Grid-side AC output power |
+| 7 | Power factor | data 12-13 | 2 byte | `output_ac_power_factor_pct` | 0.1 scale, % |
+| 8 | Frequency | data 14-15 | 2 byte | `output_ac_frequency_hz` | 0.1 scale, Hz |
+| 9 | Total generation | data 16-23 | 8 byte | `total_generation_kwh` | 0.001 scale, kWh |
+| 10 | Fault state | data 24-25 | 2 byte | `fault_code` | Bitmask |
+
+### Output Field Interpretation
 
 | Output field | Data bytes | Scale | Unit | Description |
 | --- | ---: | ---: | --- | --- |

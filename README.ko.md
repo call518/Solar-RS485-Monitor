@@ -407,6 +407,8 @@ INVERTER_VERIFY_CRC="true"
 
 이 섹션은 현재 파서가 지원하는 InoElectric IEPVS-3.5-G1/G2 기준의 핵심 통신 규약입니다. 요청 프레임, 응답 프레임, 데이터 payload, `fault_code` 비트 해석을 한곳에 모았습니다.
 
+지원 프로토콜은 신재생에너지 통합모니터링 시스템(REMS)용 프로토콜입니다.
+
 다른 인버터 모델은 요청 명령, 응답 길이, 데이터 오프셋, 스케일, CRC 순서가 다를 수 있으므로 아래 값을 그대로 가정하면 안 됩니다.
 
 ### 요청 프레임
@@ -416,7 +418,7 @@ INVERTER_VERIFY_CRC="true"
 | 바이트 | 예시 값 | 의미 |
 | ---: | ---: | --- |
 | 0 | `0x7E` | SOP, 프레임 시작 |
-| 1 | `0x01` | 인버터 ID |
+| 1 | `0x01` | 국번, 인버터 ID (`0x01`..`0xNN`) |
 | 2 | `0x01` | 요청 command |
 | 3-4 | `0xD1 0x88` | CRC16 |
 
@@ -427,15 +429,33 @@ INVERTER_VERIFY_CRC="true"
 | 바이트 | 길이 | 의미 | 현재 파서 검증 |
 | ---: | ---: | --- | --- |
 | 0 | 1 | SOP, 프레임 시작 | `0x7E` |
-| 1 | 1 | 인버터 ID | `INVERTER_ID`와 일치해야 함 |
+| 1 | 1 | 국번, 인버터 ID | `INVERTER_ID`와 일치해야 함 |
 | 2 | 1 | 응답 command | `0x02` |
-| 3-4 | 2 | 데이터 길이 | `INVERTER_DATA_LENGTH`, 기본 `26` |
+| 3 | 1 | 데이터 길이 high byte | 데이터 길이 `0x001A`의 상위 바이트 |
+| 4 | 1 | 데이터 길이 low byte | 데이터 길이 `0x001A`의 하위 바이트 |
 | 5-30 | 26 | 데이터 payload | 아래 payload 표 기준으로 해석 |
 | 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, 기본 `LH` |
 
-멀티바이트 값은 big-endian unsigned integer로 디코딩합니다. CRC는 Modbus CRC16으로 계산하며, `LH`는 low byte, high byte 순서를 의미합니다.
+멀티바이트 값은 big-endian unsigned integer로 디코딩합니다. CRC는 Modbus CRC16으로 계산하며, `LH`는 low byte, high byte 순서를 의미합니다. 현재 프로젝트의 테스트 요청 프레임과 예시 응답 프레임은 CRC 바이트가 `LH` 순서입니다.
 
-### 데이터 payload 해석
+### 응답 데이터 형태
+
+공식 매뉴얼의 응답 데이터는 아래 순서로 26바이트 payload에 들어옵니다. 현재 파서는 이 순서를 그대로 사용합니다.
+
+| 순서 | 매뉴얼 항목 | 데이터 바이트 | 길이 | 출력 필드 | 해석 |
+| ---: | --- | ---: | ---: | --- | --- |
+| 1 | PV 전압 | data 0-1 | 2 byte | `input_dc_voltage_v` | PV 입력 DC 전압 |
+| 2 | PV 전류 | data 2-3 | 2 byte | `input_dc_current_a` | PV 입력 DC 전류 |
+| 3 | PV 출력 | data 4-5 | 2 byte | `input_dc_power_w` | PV 입력 DC 전력 |
+| 4 | 계통 전압 | data 6-7 | 2 byte | `output_ac_voltage_v` | 계통 연계 AC 출력 전압 |
+| 5 | 계통 전류 | data 8-9 | 2 byte | `output_ac_current_a` | 계통 연계 AC 출력 전류 |
+| 6 | 현재 출력 | data 10-11 | 2 byte | `output_ac_power_w` | 계통 연계 AC 출력 전력 |
+| 7 | 역률 | data 12-13 | 2 byte | `output_ac_power_factor_pct` | 0.1 스케일, % |
+| 8 | 주파수 | data 14-15 | 2 byte | `output_ac_frequency_hz` | 0.1 스케일, Hz |
+| 9 | 누적 발전량 | data 16-23 | 8 byte | `total_generation_kwh` | 0.001 스케일, kWh |
+| 10 | 고장 여부 | data 24-25 | 2 byte | `fault_code` | 비트마스크 |
+
+### 출력 필드 해석
 
 | 출력 필드 | 데이터 바이트 | 스케일 | 단위 | 설명 |
 | --- | ---: | ---: | --- | --- |
