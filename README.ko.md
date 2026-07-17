@@ -252,8 +252,11 @@ DASHBOARD_RUN_ON_SAVE="false"
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
 DASHBOARD_MAX_POINTS="10000"
 DASHBOARD_DEFAULT_RANGE="Last 7 days"
+DASHBOARD_TOTAL_GENERATION_DAYS="14"
+DASHBOARD_DAILY_GENERATION_DAYS="14"
+DASHBOARD_WEEKLY_GENERATION_WEEKS="16"
 DASHBOARD_MONTHLY_GENERATION_MONTHS="12"
-DASHBOARD_YEARLY_GENERATION_YEARS="5"
+DASHBOARD_YEARLY_GENERATION_YEARS="10"
 DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
@@ -277,7 +280,7 @@ ALERT_CHANNELS=""
 
 `DASHBOARD_DEFAULT_RANGE`는 대시보드 최초 진입 시 시작일/종료일 기본값을 계산하는 데 사용합니다. 기본값은 `Last 7 days`이며, 사용자는 사이드바에서 시작일과 종료일을 직접 변경할 수 있습니다.
 
-`DASHBOARD_MONTHLY_GENERATION_MONTHS`와 `DASHBOARD_YEARLY_GENERATION_YEARS`는 월간/연간 발전량 차트의 고정 표시 기간을 지정합니다. 이 값은 설정 파일에서만 변경할 수 있으며 대시보드 UI에는 노출되지 않습니다.
+`DASHBOARD_TOTAL_GENERATION_DAYS`, `DASHBOARD_DAILY_GENERATION_DAYS`, `DASHBOARD_WEEKLY_GENERATION_WEEKS`, `DASHBOARD_MONTHLY_GENERATION_MONTHS`, `DASHBOARD_YEARLY_GENERATION_YEARS`는 누적/일일/주간/월간/연간 발전량 차트의 최소 또는 고정 표시 기간을 지정합니다. 이 값은 설정 파일에서만 변경할 수 있으며 대시보드 UI에는 노출되지 않습니다.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`는 Streamlit 대시보드 서버의 기본 실행 옵션입니다. 명령행에 Streamlit 옵션을 명시하면 해당 값이 우선합니다.
 
@@ -717,7 +720,7 @@ solar-rs485-monitor-dashboard --version
 
 브라우저에서 출력된 Streamlit URL을 엽니다. 사이드바에서 데이터 소스, 시작일, 종료일을 선택할 수 있습니다. 시작일과 종료일이 같으면 해당 날짜 하루만 조회합니다. 종료일은 시작일 이전으로 선택할 수 없고, 시작일/종료일 모두 오늘 이후 날짜는 선택할 수 없습니다. 시작일/종료일의 최초 기본값은 `DASHBOARD_DEFAULT_RANGE`로 계산됩니다.
 
-대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 단위로 집계됩니다. 또한 선택한 기간과 `DASHBOARD_MAX_POINTS` 값에 따라 선택 가능한 최소 집계 단위가 동적으로 상향됩니다. 누적/일일 발전량 차트는 조회 종료일 기준으로 최소 14일, 주간 발전량 차트는 최소 16주를 표시합니다. 월간/연간 발전량 차트는 설정 파일의 고정 기간을 사용하며 기본값은 12개월/5년입니다.
+대시보드는 상단에 인버터 이름과 ID를 표시하고, 수집되는 각 메트릭을 개별 차트로 렌더링합니다. 데이터베이스 전송량과 브라우저 렌더링 부담을 줄이기 위해 조회 결과는 차트 표시 전에 선택 가능한 1분, 2분, 5분, 10분, 15분, 30분, 1시간, 3시간, 6시간, 12시간 단위로 집계됩니다. 또한 선택한 기간과 `DASHBOARD_MAX_POINTS` 값에 따라 선택 가능한 최소 집계 단위가 동적으로 상향됩니다. 누적/일일 발전량 차트는 조회 종료일 기준으로 최소 14일, 주간 발전량 차트는 최소 16주를 표시합니다. 월간/연간 발전량 차트는 설정 파일의 고정 기간을 사용하며 기본값은 12개월/10년입니다.
 
 대시보드 서버 옵션은 `solar-rs485-monitor.conf`의 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, `DASHBOARD_RUN_ON_SAVE`에서 읽습니다. 사이드바 자동 새로고침 기본 선택값은 `DASHBOARD_AUTO_REFRESH_SECONDS`로 지정할 수 있고, 실행 중에는 사용자가 사이드바에서 다시 변경할 수 있습니다. 선택된 간격은 브라우저 페이지 전체를 reload하지 않고 대시보드 본문 영역을 갱신합니다. 명령행에서 Streamlit 서버 옵션을 override하려면:
 

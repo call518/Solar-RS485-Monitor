@@ -39,10 +39,11 @@ DEFAULT_DASHBOARD_AUTO_REFRESH_SECONDS = 60
 DEFAULT_DASHBOARD_MAX_POINTS = 10000
 DEFAULT_DASHBOARD_TIME_AXIS_MODE = "fixed"
 DEFAULT_DASHBOARD_RANGE = "Last 2 days"
+DEFAULT_DASHBOARD_TOTAL_GENERATION_DAYS = 14
 DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS = 14
 DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS = 16
 DEFAULT_DASHBOARD_MONTHLY_GENERATION_MONTHS = 12
-DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS = 5
+DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS = 10
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -492,6 +493,33 @@ def get_positive_int_env(name: str, default: int, minimum: int, maximum: int) ->
         return default
 
     return min(maximum, max(minimum, value))
+
+
+def get_dashboard_total_generation_days() -> int:
+    return get_positive_int_env(
+        "DASHBOARD_TOTAL_GENERATION_DAYS",
+        DEFAULT_DASHBOARD_TOTAL_GENERATION_DAYS,
+        minimum=1,
+        maximum=3660,
+    )
+
+
+def get_dashboard_daily_generation_days() -> int:
+    return get_positive_int_env(
+        "DASHBOARD_DAILY_GENERATION_DAYS",
+        DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+        minimum=1,
+        maximum=3660,
+    )
+
+
+def get_dashboard_weekly_generation_weeks() -> int:
+    return get_positive_int_env(
+        "DASHBOARD_WEEKLY_GENERATION_WEEKS",
+        DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+        minimum=1,
+        maximum=520,
+    )
 
 
 def get_dashboard_monthly_generation_months() -> int:
@@ -2979,6 +3007,7 @@ def render_daily_generation_chart(
     until: datetime,
     display_timezone: ZoneInfo,
     fixed_time_axis: bool,
+    minimum_days: int,
 ) -> None:
     from streamlit_echarts import st_echarts
 
@@ -3004,7 +3033,7 @@ def render_daily_generation_chart(
         since=since,
         until=until,
         display_timezone=display_timezone,
-        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+        minimum_days=minimum_days,
     )
 
     if not categories:
@@ -3246,11 +3275,16 @@ def render_dashboard_body(
         st.warning(text["no_rows"])
         return
 
+    total_generation_days = get_dashboard_total_generation_days()
+    daily_generation_days = get_dashboard_daily_generation_days()
+    weekly_generation_weeks = get_dashboard_weekly_generation_weeks()
+    monthly_generation_months = get_dashboard_monthly_generation_months()
+    yearly_generation_years = get_dashboard_yearly_generation_years()
     total_generation_since = get_day_generation_since(
         since=since,
         until=display_until,
         display_timezone=display_timezone,
-        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+        minimum_days=total_generation_days,
     )
     total_generation_duration_seconds = max(
         1.0,
@@ -3295,8 +3329,6 @@ def render_dashboard_body(
         1,
         tzinfo=display_timezone,
     ).astimezone(timezone.utc)
-    monthly_generation_months = get_dashboard_monthly_generation_months()
-    yearly_generation_years = get_dashboard_yearly_generation_years()
     monthly_generation_since, _ = get_monthly_generation_time_bounds(
         until=until,
         display_timezone=display_timezone,
@@ -3482,7 +3514,7 @@ def render_dashboard_body(
             if metric_name == "total_generation_kwh":
                 st.caption(
                     text["total_generation_scope"].format(
-                        days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+                        days=total_generation_days,
                     )
                 )
                 if total_generation_error is not None:
@@ -3520,13 +3552,13 @@ def render_dashboard_body(
                         since=since,
                         until=display_until,
                         display_timezone=display_timezone,
-                        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+                        minimum_days=daily_generation_days,
                     )
                     weekly_generation_since = get_week_generation_since(
                         since=since,
                         until=display_until,
                         display_timezone=display_timezone,
-                        minimum_weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                        minimum_weeks=weekly_generation_weeks,
                     )
                     daily_df = filter_daily_generation_by_range(
                         daily_generation_df,
@@ -3551,7 +3583,7 @@ def render_dashboard_body(
                             since=since,
                             until=display_until,
                             display_timezone=display_timezone,
-                            minimum_weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                            minimum_weeks=weekly_generation_weeks,
                         ),
                     )
 
@@ -3560,7 +3592,7 @@ def render_dashboard_body(
                         st.markdown(f"#### {text['daily_generation_chart']}")
                         st.caption(
                             text["daily_generation_scope"].format(
-                                days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+                                days=daily_generation_days,
                             )
                         )
                         if daily_df.empty:
@@ -3577,13 +3609,14 @@ def render_dashboard_body(
                             until=display_until,
                             display_timezone=display_timezone,
                             fixed_time_axis=fixed_time_axis,
+                            minimum_days=daily_generation_days,
                         )
 
                     with weekly_col:
                         st.markdown(f"#### {text['weekly_generation_chart']}")
                         st.caption(
                             text["weekly_generation_scope"].format(
-                                weeks=DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS,
+                                weeks=weekly_generation_weeks,
                             )
                         )
                         if weekly_raw_df.empty:

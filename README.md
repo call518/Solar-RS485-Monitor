@@ -254,8 +254,11 @@ DASHBOARD_RUN_ON_SAVE="false"
 DASHBOARD_AUTO_REFRESH_SECONDS="60"
 DASHBOARD_MAX_POINTS="10000"
 DASHBOARD_DEFAULT_RANGE="Last 7 days"
+DASHBOARD_TOTAL_GENERATION_DAYS="14"
+DASHBOARD_DAILY_GENERATION_DAYS="14"
+DASHBOARD_WEEKLY_GENERATION_WEEKS="16"
 DASHBOARD_MONTHLY_GENERATION_MONTHS="12"
-DASHBOARD_YEARLY_GENERATION_YEARS="5"
+DASHBOARD_YEARLY_GENERATION_YEARS="10"
 DASHBOARD_AUTH_ENABLED="false"
 DASHBOARD_AUTH_USERS=""
 DASHBOARD_AUTH_COOKIE_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
@@ -279,7 +282,7 @@ The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to det
 
 `DASHBOARD_DEFAULT_RANGE` is used to calculate the initial start and end dates when the dashboard first loads. The default is `Last 7 days`, and users can still change the start and end dates from the sidebar.
 
-`DASHBOARD_MONTHLY_GENERATION_MONTHS` and `DASHBOARD_YEARLY_GENERATION_YEARS` set fixed display windows for the monthly and yearly generation charts. These values are config-only and are not exposed in the dashboard UI.
+`DASHBOARD_TOTAL_GENERATION_DAYS`, `DASHBOARD_DAILY_GENERATION_DAYS`, `DASHBOARD_WEEKLY_GENERATION_WEEKS`, `DASHBOARD_MONTHLY_GENERATION_MONTHS`, and `DASHBOARD_YEARLY_GENERATION_YEARS` set the minimum or fixed display windows for the total, daily, weekly, monthly, and yearly generation charts. These values are config-only and are not exposed in the dashboard UI.
 
 `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` set the default Streamlit dashboard server options. Explicit command-line Streamlit options still override these values.
 
@@ -718,7 +721,7 @@ solar-rs485-monitor-dashboard --version
 
 Open the displayed Streamlit URL in a browser. The sidebar lets you select the data source, start date, and end date. If the start and end dates are the same, the dashboard shows that single day. The end date cannot be earlier than the start date, and neither date can be in the future. The initial start and end dates are calculated from `DASHBOARD_DEFAULT_RANGE`.
 
-The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, 30 minute, 1 hour, 3 hour, 6 hour, or 12 hour buckets before charting to reduce database transfer and browser rendering cost. The minimum selectable bucket is raised dynamically by selected date range and `DASHBOARD_MAX_POINTS` so oversized result sets are avoided. Total and daily generation charts display at least 14 days relative to the selected end date, and weekly generation displays at least 16 weeks. Monthly and yearly generation charts use their own fixed config-only windows, defaulting to 12 months and 5 years.
+The dashboard shows inverter name and ID at the top, then renders each collected metric as a separate chart. Query results are aggregated into selectable 1 minute, 2 minute, 5 minute, 10 minute, 15 minute, 30 minute, 1 hour, 3 hour, 6 hour, or 12 hour buckets before charting to reduce database transfer and browser rendering cost. The minimum selectable bucket is raised dynamically by selected date range and `DASHBOARD_MAX_POINTS` so oversized result sets are avoided. Total and daily generation charts display at least 14 days relative to the selected end date, and weekly generation displays at least 16 weeks. Monthly and yearly generation charts use their own fixed config-only windows, defaulting to 12 months and 10 years.
 
 Dashboard server options are read from `DASHBOARD_SERVER_ADDRESS`, `DASHBOARD_SERVER_PORT`, `DASHBOARD_SERVER_HEADLESS`, `DASHBOARD_GATHER_USAGE_STATS`, and `DASHBOARD_RUN_ON_SAVE` in `solar-rs485-monitor.conf`. The default sidebar auto-refresh option can be set with `DASHBOARD_AUTO_REFRESH_SECONDS`, and users can still change it from the sidebar while running. The selected interval refreshes the dashboard content area without reloading the browser page. To override Streamlit server options from the command line:
 
