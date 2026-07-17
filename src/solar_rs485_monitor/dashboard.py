@@ -139,6 +139,7 @@ UI_TEXT = {
         "latest_snapshot": "최신 메트릭",
         "metric_charts": "메트릭 차트",
         "chart_caption": "각 차트는 선택한 기간의 {bucket} 단위 집계값을 표시합니다.",
+        "total_generation_scope": "(조회 종료일 기준 최소 {days}일 표시)",
         "daily_generation_chart": "일일 발전량 (kWh/day)",
         "daily_generation_scope": "(조회 종료일 기준 최소 {days}일 표시)",
         "daily_generation_empty": "선택한 범위에 일일 발전량 데이터가 없습니다.",
@@ -199,6 +200,7 @@ UI_TEXT = {
         "latest_snapshot": "Latest Metrics",
         "metric_charts": "Metric Charts",
         "chart_caption": "Each chart shows {bucket} aggregated values for the selected date range.",
+        "total_generation_scope": "Minimum display: {days} days relative to the selected end date.",
         "daily_generation_chart": "Daily Generation (kWh/day)",
         "daily_generation_scope": "Minimum display: {days} days relative to the selected end date.",
         "daily_generation_empty": "No daily generation data in the selected date range.",
@@ -3244,6 +3246,46 @@ def render_dashboard_body(
         st.warning(text["no_rows"])
         return
 
+    total_generation_since = get_day_generation_since(
+        since=since,
+        until=display_until,
+        display_timezone=display_timezone,
+        minimum_days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+    )
+    total_generation_duration_seconds = max(
+        1.0,
+        (
+            until.astimezone(timezone.utc)
+            - total_generation_since.astimezone(timezone.utc)
+        ).total_seconds(),
+    )
+    total_generation_bucket_seconds = max(
+        bucket_seconds,
+        get_min_bucket_seconds_for_duration(
+            total_generation_duration_seconds,
+            int(limit),
+        ),
+    )
+    total_generation_df = None
+    total_generation_error = None
+    try:
+        if source == "MariaDB":
+            total_generation_df = read_mariadb_data(
+                total_generation_since,
+                until,
+                int(limit),
+                total_generation_bucket_seconds,
+            )
+        else:
+            total_generation_df = read_sqlite_data(
+                total_generation_since,
+                until,
+                int(limit),
+                total_generation_bucket_seconds,
+            )
+    except Exception as e:
+        total_generation_error = e
+
     latest = df.sort_values("timestamp").iloc[-1]
     latest_utc = coerce_utc_datetime(latest["timestamp"])
     latest_local = latest_utc.astimezone(display_timezone)
@@ -3422,27 +3464,50 @@ def render_dashboard_body(
     for group in CHART_GROUPS:
         if len(group) == 1:
             metric_name = group[0]
+            metric_chart_df = chart_df
+            metric_since = since
+            if (
+                metric_name == "total_generation_kwh"
+                and total_generation_df is not None
+                and not total_generation_df.empty
+            ):
+                metric_chart_df = (
+                    total_generation_df
+                    .sort_values("timestamp")
+                    .set_index("timestamp")
+                )
+                metric_since = total_generation_since
+
             st.markdown(f"#### {chart_title(metric_name, metric_labels)}")
-            stats = format_chart_stats(metric_name, chart_df, latest)
+            if metric_name == "total_generation_kwh":
+                st.caption(
+                    text["total_generation_scope"].format(
+                        days=DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS,
+                    )
+                )
+                if total_generation_error is not None:
+                    st.warning(str(total_generation_error))
+
+            stats = format_chart_stats(metric_name, metric_chart_df, latest)
             if stats:
                 st.caption(stats)
             if metric_name in BAR_CHART_COLORS:
                 render_bar_chart(
                     st,
-                    chart_df,
+                    metric_chart_df,
                     metric_name,
                     metric_labels[metric_name],
-                    since,
+                    metric_since,
                     display_until,
                     fixed_time_axis,
                 )
             else:
                 render_area_chart(
                     st,
-                    chart_df,
+                    metric_chart_df,
                     metric_name,
                     metric_labels[metric_name],
-                    since,
+                    metric_since,
                     display_until,
                     fixed_time_axis,
                 )
