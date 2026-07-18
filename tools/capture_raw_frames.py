@@ -2,7 +2,7 @@ import argparse
 import time
 
 from solar_rs485_monitor.protocols import get_protocol
-from solar_rs485_monitor.protocols.inoelectric_iepvs_g1_g2 import modbus_crc16
+from solar_rs485_monitor.protocols.inoelectric_iepvs_g1_g2 import crc16
 
 
 DEFAULT_BAUDRATES = "9600,19200,38400,4800,115200"
@@ -17,7 +17,7 @@ def parse_baudrates(value: str) -> list[int]:
 
 
 def format_request_with_crc(base: bytes, crc_order: str) -> bytes:
-    crc = modbus_crc16(base)
+    crc = crc16(base)
 
     if crc_order == "HL":
         return base + bytes([(crc >> 8) & 0xFF, crc & 0xFF])

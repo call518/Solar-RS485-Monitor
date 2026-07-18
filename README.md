@@ -436,7 +436,7 @@ The default configuration expects a 33-byte response frame with a 26-byte data p
 | 5-30 | 26 | Data payload | Interpreted by the payload table below |
 | 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, default `LH` |
 
-Multi-byte values are decoded as big-endian unsigned integers. CRC is calculated as Modbus CRC16, and `LH` means low byte followed by high byte. The tested request frame and sample response frame in this project use `LH` CRC byte order.
+Multi-byte values are decoded as big-endian unsigned integers. The protocol is REMS, while the frame CRC is calculated with the CRC16/Modbus algorithm currently verified for IEPVS-3.5-G1/G2. `LH` means the calculated 16-bit CRC value is appended as low byte followed by high byte. For example, the request body `7e 01 01` produces CRC `0x88D1`, which becomes `d1 88` in `LH` byte order.
 
 ### Response Data Layout
 

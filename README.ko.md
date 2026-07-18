@@ -434,7 +434,7 @@ INVERTER_VERIFY_CRC="true"
 | 5-30 | 26 | 데이터 payload | 아래 payload 표 기준으로 해석 |
 | 31-32 | 2 | CRC16 | `INVERTER_CRC_ORDER`, 기본 `LH` |
 
-멀티바이트 값은 big-endian unsigned integer로 디코딩합니다. CRC는 Modbus CRC16으로 계산하며, `LH`는 low byte, high byte 순서를 의미합니다. 현재 프로젝트의 테스트 요청 프레임과 예시 응답 프레임은 CRC 바이트가 `LH` 순서입니다.
+멀티바이트 값은 big-endian unsigned integer로 디코딩합니다. 프로토콜은 REMS이며, 프레임 끝의 CRC는 현재 IEPVS-3.5-G1/G2에서 검증된 CRC16/Modbus 계산 방식으로 산출합니다. `LH`는 계산된 16비트 CRC 값을 low byte, high byte 순서로 프레임에 붙인다는 의미입니다. 예를 들어 요청 본문 `7e 01 01`의 CRC 값은 `0x88D1`이고, `LH` 순서로 붙이면 `d1 88`이 됩니다.
 
 ### 응답 데이터 형태
 

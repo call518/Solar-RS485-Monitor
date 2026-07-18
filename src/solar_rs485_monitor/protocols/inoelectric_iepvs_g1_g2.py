@@ -9,7 +9,7 @@ def u64(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset:offset + 8], "big")
 
 
-def modbus_crc16(data: bytes) -> int:
+def crc16(data: bytes) -> int:
     crc = 0xFFFF
     for byte in data:
         crc ^= byte
@@ -47,7 +47,7 @@ def parse_frame(
 
     if verify_crc:
         received_crc = get_crc_from_frame(frame, crc_order)
-        calculated_crc = modbus_crc16(frame[:-2])
+        calculated_crc = crc16(frame[:-2])
 
         if received_crc != calculated_crc:
             raise RuntimeError(
