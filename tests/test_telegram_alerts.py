@@ -91,7 +91,7 @@ def test_sink_error_alert_sends_sink_failure_message(monkeypatch) -> None:
 
     assert result["skipped"] is False
     assert len(sent_messages) == 1
-    assert "Solar RS485 Sink Insert Failed" in sent_messages[0]
+    assert "Solar RS485 Sink Insert Failed: sqlite" in sent_messages[0]
     assert "Sink: `sqlite`" in sent_messages[0]
     assert "Error: `database is locked`" in sent_messages[0]
 

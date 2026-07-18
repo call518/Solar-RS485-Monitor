@@ -85,7 +85,7 @@ def build_fault_event_message(data: dict) -> str:
 def build_sink_error_message(data: dict, sink: str, error: Exception) -> str:
     return "\n".join(
         [
-            "*Solar RS485 Sink Insert Failed*",
+            f"*Solar RS485 Sink Insert Failed: {sink}*",
             f"Time: `{data.get('@timestamp', '-')}`",
             f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
             f"Sink: `{sink}`",
