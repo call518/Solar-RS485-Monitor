@@ -44,6 +44,7 @@ from solar_rs485_monitor.alerts.dispatcher import (
     list_alert_handler_names,
     parse_alert_channels,
 )
+from solar_rs485_monitor.alerts.telegram import send_sink_error_alert
 from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
@@ -288,6 +289,46 @@ def print_alert_error(inverter_name: str, alert: str, error: Exception) -> None:
         "alert": alert,
         "error": str(error),
     })
+
+
+def handle_sink_error(
+    inverter_name: str,
+    alert_configs: dict[str, dict],
+    data: dict,
+    sink: str,
+    error: Exception,
+) -> None:
+    print_sink_error(
+        inverter_name=inverter_name,
+        sink=sink,
+        error=error,
+    )
+
+    telegram_config = alert_configs.get("telegram")
+    if telegram_config is None:
+        return
+
+    try:
+        alert_result = send_sink_error_alert(
+            data=data,
+            config=telegram_config,
+            sink=sink,
+            error=error,
+        )
+        print_section_json("[Alert] Telegram", {
+            **timestamp_fields(),
+            "inverter_name": inverter_name,
+            "alert": "telegram",
+            "event": "sink_insert_failed",
+            "sink": sink,
+            **summarize_alert_result(alert_result),
+        })
+    except Exception as e:
+        print_alert_error(
+            inverter_name=inverter_name,
+            alert="telegram",
+            error=e,
+        )
 
 
 def get_config_path() -> Path | None:
@@ -731,8 +772,10 @@ def main() -> None:
                         "status": "written",
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="google_sheet",
                         error=e,
                     )
@@ -752,8 +795,10 @@ def main() -> None:
                         "thingspeak_entry_id": thingspeak_entry_id,
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="thingspeak",
                         error=e,
                     )
@@ -771,8 +816,10 @@ def main() -> None:
                         "mariadb_insert_id": mariadb_insert_id,
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="mariadb",
                         error=e,
                     )
@@ -791,8 +838,10 @@ def main() -> None:
                         "sqlite_insert_id": sqlite_insert_id,
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="sqlite",
                         error=e,
                     )
@@ -812,8 +861,10 @@ def main() -> None:
                         "opensearch_result": opensearch_result["result"],
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="opensearch",
                         error=e,
                     )
@@ -835,8 +886,10 @@ def main() -> None:
                         "supabase_insert_id": supabase_insert_id,
                     })
                 except Exception as e:
-                    print_sink_error(
+                    handle_sink_error(
                         inverter_name=inverter_name,
+                        alert_configs=alert_configs,
+                        data=result,
                         sink="supabase",
                         error=e,
                     )

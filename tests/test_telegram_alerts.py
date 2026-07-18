@@ -68,3 +68,52 @@ def test_standby_to_fault_does_not_send_normal_event(monkeypatch) -> None:
     assert len(sent_messages) == 1
     assert "Solar RS485 Fault Event" in sent_messages[0]
     assert "Solar RS485 Normal Event" not in sent_messages[0]
+
+
+def test_sink_error_alert_sends_sink_failure_message(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    result = telegram.send_sink_error_alert(
+        data=make_data(0),
+        config={**make_config(), "send_sink_error": True},
+        sink="sqlite",
+        error=RuntimeError("database is locked"),
+    )
+
+    assert result["skipped"] is False
+    assert len(sent_messages) == 1
+    assert "Solar RS485 Sink Insert Failed" in sent_messages[0]
+    assert "Sink: `sqlite`" in sent_messages[0]
+    assert "Error: `database is locked`" in sent_messages[0]
+
+
+def test_sink_error_alert_can_be_disabled(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    result = telegram.send_sink_error_alert(
+        data=make_data(0),
+        config={**make_config(), "send_sink_error": False},
+        sink="sqlite",
+        error=RuntimeError("database is locked"),
+    )
+
+    assert result["skipped"] is True
+    assert sent_messages == []

@@ -6,6 +6,7 @@ from urllib.request import Request, urlopen
 
 from solar_rs485_monitor.alerts.message import (
     build_fault_event_message,
+    build_sink_error_message,
     build_summary_message,
     parse_int_value,
 )
@@ -58,6 +59,10 @@ def get_telegram_config() -> dict:
         ).strip().lower() in ("1", "true", "yes", "y", "on"),
         "send_fault_event": os.getenv(
             "TELEGRAM_SEND_FAULT_EVENT",
+            "true",
+        ).strip().lower() in ("1", "true", "yes", "y", "on"),
+        "send_sink_error": os.getenv(
+            "TELEGRAM_SEND_SINK_ERROR",
             "true",
         ).strip().lower() in ("1", "true", "yes", "y", "on"),
         "send_standby_event": os.getenv(
@@ -237,3 +242,28 @@ def write_to_telegram(data: dict, config: dict) -> dict:
 
 def send_alert(data: dict, config: dict) -> dict:
     return write_to_telegram(data=data, config=config)
+
+
+def send_sink_error_alert(
+    data: dict,
+    config: dict,
+    sink: str,
+    error: Exception,
+) -> dict:
+    if not config.get("send_sink_error", True):
+        return {
+            "sent": [],
+            "failed": [],
+            "skipped": True,
+            "chat_ids": config.get("chat_ids", []),
+        }
+
+    result = send_to_all_chat_ids(
+        config,
+        build_sink_error_message(data=data, sink=sink, error=error),
+    )
+    return {
+        **result,
+        "skipped": False,
+        "chat_ids": config.get("chat_ids", []),
+    }

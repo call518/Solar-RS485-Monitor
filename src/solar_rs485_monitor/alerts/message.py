@@ -80,3 +80,18 @@ def build_fault_event_message(data: dict) -> str:
             f"Raw frame: `{data.get('raw_frame_hex', '-')}`",
         ]
     )
+
+
+def build_sink_error_message(data: dict, sink: str, error: Exception) -> str:
+    return "\n".join(
+        [
+            "*Solar RS485 Sink Insert Failed*",
+            f"Time: `{data.get('@timestamp', '-')}`",
+            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
+            f"Sink: `{sink}`",
+            f"Error: `{str(error)}`",
+            "",
+            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
+            f"Fault code: `{data.get('fault_code', '-')}`",
+        ]
+    )

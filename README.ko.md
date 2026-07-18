@@ -642,7 +642,7 @@ solar-rs485-monitor --loop --all-alerts
 
 `--all-alerts`에서는 `TELEGRAM_BOT_TOKEN`과 `TELEGRAM_CHAT_IDS` 대상이 하나 이상 설정된 경우에만 Telegram이 활성화됩니다. Telegram 설정 누락을 오류로 확인하고 싶다면 `--telegram`을 명시적으로 사용합니다.
 
-외부 sink/alert 실패는 서로 분리되어 처리됩니다. SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, OpenSearch가 credential 누락, 인증 실패, 네트워크 오류, rate limit, 파일시스템 권한 문제, 데이터베이스 연결 문제 등으로 실패하면 해당 채널의 오류 JSON만 출력하고 나머지 작업은 계속 진행합니다. 한 sink나 alert의 실패가 인버터 수집을 중단하거나 다른 활성 채널 실행을 막지 않습니다.
+외부 sink/alert 실패는 서로 분리되어 처리됩니다. SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, OpenSearch가 credential 누락, 인증 실패, 네트워크 오류, rate limit, 파일시스템 권한 문제, 데이터베이스 연결 문제 등으로 실패하면 해당 채널의 오류 JSON을 출력하고 나머지 작업은 계속 진행합니다. Telegram alert가 활성화되어 있고 `TELEGRAM_SEND_SINK_ERROR="true"`이면 sink 데이터 전송/insert 실패도 Telegram으로 알립니다. 한 sink나 alert의 실패가 인버터 수집을 중단하거나 다른 활성 채널 실행을 막지 않습니다.
 
 ## systemd 서비스
 
@@ -691,6 +691,7 @@ TELEGRAM_DISABLE_NOTIFICATION="false"
 TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
+TELEGRAM_SEND_SINK_ERROR="true"
 TELEGRAM_SEND_STANDBY_EVENT="false"
 ```
 
@@ -699,6 +700,8 @@ TELEGRAM_SEND_STANDBY_EVENT="false"
 대상이 여러 개일 때는 모든 대상에 전송을 시도하며, 일부 대상 전송 실패가 다른 대상 전송을 중단시키지 않습니다.
 
 기본 동작은 alert 채널에서 정상 측정값을 스킵하고, 장애 이벤트(운전 상태 비트인 Bit 0 제외, Bit 1+ 중 하나라도 활성)가 감지될 때만 메시지를 전송합니다. 장애 이벤트 메시지에는 주요 측정값과 활성 fault bit 정보가 포함됩니다. 이벤트 시 요약 메시지도 함께 보내려면 `TELEGRAM_SEND_SUMMARY="true"`로 설정하세요.
+
+`TELEGRAM_SEND_SINK_ERROR="true"`이면 활성화된 sink의 데이터 전송/insert 실패도 Telegram으로 전송합니다. 이 알림은 fault 이벤트 여부와 무관하게 sink 실패가 발생한 시점에 전송됩니다.
 
 인버터 대기/오프 전환과 정상 복귀 전환(Bit 0)도 Telegram으로 받고 싶다면 `TELEGRAM_SEND_STANDBY_EVENT="true"`로 설정하세요. 이 옵션은 `fault_code` Bit 0이 `0 -> 1` 또는 `1 -> 0`으로 바뀌는 전이 시점에만 1회 전송하도록 동작하므로, 야간 저전력 상태에서 같은 알림이 반복 전송되는 것을 방지합니다. 단, `1 -> 0` 전환 시 Bit 1+ 장애 비트가 함께 켜져 있으면 정상 이벤트 대신 장애 이벤트로 처리합니다.
 

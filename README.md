@@ -643,7 +643,7 @@ solar-rs485-monitor --loop --all-alerts
 
 With `--all-alerts`, Telegram is enabled only when `TELEGRAM_BOT_TOKEN` and at least one target in `TELEGRAM_CHAT_IDS` are set. Use `--telegram` explicitly if you want missing configuration to be reported as an error.
 
-External sink/alert failures are isolated. If SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that channel and continues the remaining work. A failed sink or alert does not stop inverter collection or block another enabled channel.
+External sink/alert failures are isolated. If SQLite, Google Sheets, ThingSpeak, Telegram, MariaDB, or OpenSearch fails because of a missing credential, authentication error, network error, rate limit, filesystem permission issue, or database connection issue, the collector prints an error JSON for that channel and continues the remaining work. When Telegram alerting is enabled and `TELEGRAM_SEND_SINK_ERROR="true"`, sink send/insert failures are also sent to Telegram. A failed sink or alert does not stop inverter collection or block another enabled channel.
 
 ## systemd Service
 
@@ -692,6 +692,7 @@ TELEGRAM_DISABLE_NOTIFICATION="false"
 TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
+TELEGRAM_SEND_SINK_ERROR="true"
 TELEGRAM_SEND_STANDBY_EVENT="false"
 ```
 
@@ -700,6 +701,8 @@ TELEGRAM_SEND_STANDBY_EVENT="false"
 If multiple targets are configured, the alert attempts delivery to all of them. A failed target does not stop delivery to other targets.
 
 By default, the alert channel skips normal measurements and sends messages only when a fault event is detected (excluding Bit 0, and triggered when any Bit 1+ is active). The fault event message includes key measurement values and active fault bits. Set `TELEGRAM_SEND_SUMMARY="true"` if you also want a summary message on each detected event.
+
+When `TELEGRAM_SEND_SINK_ERROR="true"`, Telegram also sends a message when an enabled sink fails to send or insert data. This alert is independent of inverter fault-event detection.
 
 If you want Telegram to notify inverter standby/off and normal recovery transition events, set `TELEGRAM_SEND_STANDBY_EVENT="true"`. This sends a message only when `fault_code` Bit 0 changes from `0` to `1` or `1` to `0` (transition-based), so repeated low-power nighttime samples do not spam duplicate standby messages. If Bit 1+ fault bits are active during a `1` to `0` transition, the sample is treated as a fault event instead of a normal event.
 
