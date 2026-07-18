@@ -4,7 +4,7 @@ Solar inverter monitoring script for RS485/serial communication.
 
 The collector reads inverter data, prints the parsed result as JSON, and can optionally write the result to external logging sinks.
 
-The current parser and protocol defaults are validated for InoElectric IEPVS-3.5-G1/G2.
+The default protocol profile is validated for InoElectric IEPVS-3.5-G1/G2.
 
 Optional logging sinks are implemented as separate modules under `src/solar_rs485_monitor/sinks/`. Telegram event notifications are implemented under `src/solar_rs485_monitor/alerts/`. This keeps inverter collection separate from external logging integrations such as SQLite, Google Sheets, ThingSpeak, MariaDB, Supabase (PostgreSQL), and OpenSearch or Elasticsearch, while handling alert delivery separately.
 
@@ -120,7 +120,7 @@ Optional logging sinks are implemented as separate modules under `src/solar_rs48
 
 ## Collected Data at a Glance
 
-When the current parser is used with a supported InoElectric IEPVS-3.5-G1/G2 inverter, each successful read produces these core values:
+When the default protocol profile is used with a supported InoElectric IEPVS-3.5-G1/G2 inverter, each successful read produces these core values:
 
 | Category | Metric | Meaning |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ The request frame, response frame length, data offsets, scaling rules, CRC order
 
 - Request frame: set `INVERTER_REQUEST_HEX` to the product-specific request frame. If your environment describes this as a TCP header or protocol header, treat that product-specific header/request bytes as part of this value.
 - Response validation: set `INVERTER_FRAME_LENGTH`, `INVERTER_DATA_LENGTH`, `INVERTER_CRC_ORDER`, and `INVERTER_ID` according to the product's response format.
-- Response parsing: update `parse_frame()` in [src/solar_rs485_monitor/collector.py](src/solar_rs485_monitor/collector.py) if the product returns fields at different byte offsets, uses different units, or uses different scaling.
+- Response parsing: add a product-specific protocol module under `src/solar_rs485_monitor/protocols/` and select it with `INVERTER_PROTOCOL` if the product returns fields at different byte offsets, uses different units, or uses different scaling.
 
 Do not assume another RS485 inverter will expose the same data layout just because the serial/TCP connection succeeds.
 
@@ -191,8 +191,8 @@ uv venv .venv
 ```env
 SERIAL_PORT="/dev/ttyUSB0"
 INVERTER_NAME="YOUR_INVERTER_NAME"
+INVERTER_PROTOCOL="inoelectric_iepvs_g1_g2"
 INVERTER_ID="1"
-INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
 SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
 PYTHON_VENV_PATH="/absolute/path/to/.venv"
 ```
@@ -387,20 +387,15 @@ The inverter request and expected response format are also configured in `solar-
 
 ```env
 INVERTER_NAME="YOUR_INVERTER_NAME"
+INVERTER_PROTOCOL="inoelectric_iepvs_g1_g2"
 INVERTER_ID="1"
-INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
+INVERTER_REQUEST_HEX="7e0101d188"
 INVERTER_FRAME_LENGTH="33"
 INVERTER_DATA_LENGTH="26"
 INVERTER_CRC_ORDER="LH"
 ```
 
-For the tested InoElectric IEPVS-3.5-G1/G2 setup, the request frame is:
-
-```env
-INVERTER_REQUEST_HEX="7e0101d188"
-```
-
-Use a different value if your inverter manual specifies a different request frame.
+The currently supported protocol profile is `inoelectric_iepvs_g1_g2`. You can still override `INVERTER_REQUEST_HEX` if your inverter manual specifies a different request frame.
 
 `INVERTER_VERIFY_CRC` is optional and defaults to `true`.
 
@@ -410,7 +405,7 @@ INVERTER_VERIFY_CRC="true"
 
 ## Inverter/REMS Data Packet Protocol
 
-This section summarizes the protocol currently supported by the parser for InoElectric IEPVS-3.5-G1/G2. It keeps the request frame, response frame, data payload, and `fault_code` bit interpretation in one place.
+This section summarizes the protocol currently supported by the default profile for InoElectric IEPVS-3.5-G1/G2. It keeps the request frame, response frame, data payload, and `fault_code` bit interpretation in one place.
 
 The supported protocol is the Renewable Energy Monitoring System (REMS) protocol.
 
@@ -431,7 +426,7 @@ The tested request frame is `7e 01 01 d1 88`.
 
 The default configuration expects a 33-byte response frame with a 26-byte data payload.
 
-| Byte | Length | Meaning | Current parser validation |
+| Byte | Length | Meaning | Current profile validation |
 | ---: | ---: | --- | --- |
 | 0 | 1 | SOP, frame start | `0x7E` |
 | 1 | 1 | Station number, inverter ID | Must match `INVERTER_ID` |
@@ -445,7 +440,7 @@ Multi-byte values are decoded as big-endian unsigned integers. CRC is calculated
 
 ### Response Data Layout
 
-The official manual defines the response data in the following 26-byte payload order. The current parser uses the same order.
+The official manual defines the response data in the following 26-byte payload order. The default profile uses the same order.
 
 | Order | Manual item | Data bytes | Length | Output field | Interpretation |
 | ---: | --- | ---: | ---: | --- | --- |
@@ -1059,6 +1054,7 @@ Errors are also printed as JSON:
 ## Troubleshooting
 
 - `No response from inverter`: check `SERIAL_PORT`, remote RS485 host IP, TCP port, RS485 wiring, inverter ID, and baud rate.
+- To inspect raw responses, run `uv run python tools/capture_raw_frames.py --port /dev/ttyUSB0 --try-crc-orders` and compare the TX/RX frames.
 - `Connection refused`: `socat` is not running, the IP/port is wrong, or a firewall is blocking access.
 - `CRC mismatch`: check `INVERTER_CRC_ORDER`, request bytes, and whether the expected frame length matches the actual inverter response.
 - `ThingSpeak update rejected`: check `THINGSPEAK_API_KEY` and use an update interval of at least 15 seconds.

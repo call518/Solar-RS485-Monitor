@@ -102,14 +102,20 @@ SERIAL_READ_RETRIES="2"
 #
 # [Required] Human-readable inverter label used in JSON output and sinks.
 INVERTER_NAME="YOUR_INVERTER_NAME"
+# [Required] Protocol profile used for request defaults, response validation, and parsing.
+# [Required] Supported value: inoelectric_iepvs_g1_g2
+INVERTER_PROTOCOL="inoelectric_iepvs_g1_g2"
 # [Required] Expected inverter ID in the response frame.
 INVERTER_ID="1"
-# [Required] Request frame sent to the inverter as hexadecimal bytes.
-INVERTER_REQUEST_HEX="YOUR_INVERTER_REQUEST_HEX"
-# [Required] Expected response frame and payload lengths.
+# [Optional] Request frame sent to the inverter as hexadecimal bytes.
+# [Optional] Defaults to the selected protocol profile value.
+INVERTER_REQUEST_HEX="7e0101d188"
+# [Optional] Expected response frame and payload lengths.
+# [Optional] Defaults to the selected protocol profile values.
 INVERTER_FRAME_LENGTH="33"
 INVERTER_DATA_LENGTH="26"
-# [Required] CRC byte order in the response frame: LH or HL.
+# [Optional] CRC byte order in the response frame: LH or HL.
+# [Optional] Defaults to the selected protocol profile value.
 INVERTER_CRC_ORDER="LH"
 # [Optional] Verify Modbus CRC16 before parsing the frame.
 INVERTER_VERIFY_CRC="true"

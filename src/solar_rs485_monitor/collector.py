@@ -45,28 +45,12 @@ from solar_rs485_monitor.alerts.dispatcher import (
     parse_alert_channels,
 )
 from solar_rs485_monitor.alerts.telegram import send_sink_error_alert
+from solar_rs485_monitor.protocols import InverterProtocol, get_protocol
 from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 MIN_COLLECT_INTERVAL_SECONDS = 60.0
-
-
-def u16(data: bytes, offset: int) -> int:
-    return int.from_bytes(data[offset:offset + 2], "big")
-
-
-def u64(data: bytes, offset: int) -> int:
-    return int.from_bytes(data[offset:offset + 8], "big")
-
-
-def modbus_crc16(data: bytes) -> int:
-    crc = 0xFFFF
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
-    return crc & 0xFFFF
 
 
 def parse_hex(value: str) -> bytes:
@@ -350,18 +334,6 @@ def print_config_template() -> None:
     print(template.read_text(encoding="utf-8"), end="")
 
 
-def get_crc_from_frame(frame: bytes, crc_order: str) -> int:
-    crc_bytes = frame[-2:]
-
-    if crc_order == "LH":
-        return crc_bytes[0] | (crc_bytes[1] << 8)
-
-    if crc_order == "HL":
-        return (crc_bytes[0] << 8) | crc_bytes[1]
-
-    raise RuntimeError(f"Invalid INVERTER_CRC_ORDER: {crc_order}")
-
-
 def read_frame(
     port: str,
     baudrate: int,
@@ -399,80 +371,13 @@ def is_retryable_frame_error(error: Exception) -> bool:
     ))
 
 
-def parse_frame(
-    frame: bytes,
-    inverter_name: str,
-    expected_inverter_id: int,
-    expected_frame_len: int,
-    expected_data_len: int,
-    crc_order: str,
-    verify_crc: bool,
-) -> dict:
-    if len(frame) < expected_frame_len:
-        raise RuntimeError(
-            f"Incomplete frame: {len(frame)} bytes "
-            f"raw_frame_hex={frame.hex(' ')}"
-        )
-
-    if verify_crc:
-        received_crc = get_crc_from_frame(frame, crc_order)
-        calculated_crc = modbus_crc16(frame[:-2])
-
-        if received_crc != calculated_crc:
-            raise RuntimeError(
-                "CRC mismatch "
-                f"received=0x{received_crc:04x} "
-                f"calculated=0x{calculated_crc:04x} "
-                f"frame_len={len(frame)} "
-                f"raw_frame_hex={frame.hex(' ')}"
-            )
-
-    if frame[0] != 0x7E:
-        raise RuntimeError(
-            f"Invalid SOP: 0x{frame[0]:02x} "
-            f"raw_frame_hex={frame.hex(' ')}"
-        )
-
-    inverter_id = frame[1]
-    command = frame[2]
-    data_len = int.from_bytes(frame[3:5], "big")
-
-    if inverter_id != expected_inverter_id:
-        raise RuntimeError(f"Unexpected inverter_id: {inverter_id}")
-
-    if command != 0x02:
-        raise RuntimeError(f"Unexpected command: 0x{command:02x}")
-
-    if data_len != expected_data_len:
-        raise RuntimeError(f"Unexpected data length: {data_len}")
-
-    data = frame[5:5 + data_len]
-    fault_code = u16(data, 24)
-
-    return {
-        **timestamp_fields(),
-        "inverter_name": inverter_name,
-        "inverter_id": inverter_id,
-        "input_dc_voltage_v": u16(data, 0),
-        "input_dc_current_a": u16(data, 2),
-        "input_dc_power_w": u16(data, 4),
-        "output_ac_voltage_v": u16(data, 6),
-        "output_ac_current_a": u16(data, 8),
-        "output_ac_power_w": u16(data, 10),
-        "output_ac_power_factor_pct": u16(data, 12) / 10.0,
-        "output_ac_frequency_hz": u16(data, 14) / 10.0,
-        "total_generation_kwh": u64(data, 16) / 1000.0,
-        "fault_code": fault_code,
-        "raw_frame_hex": frame.hex(" "),
-    }
-
-
 def collect_once(
     port: str,
     baudrate: int,
     timeout: float,
     request: bytes,
     inverter_name: str,
+    protocol: InverterProtocol,
     expected_inverter_id: int,
     expected_frame_len: int,
     expected_data_len: int,
@@ -490,7 +395,7 @@ def collect_once(
                 expected_frame_len=expected_frame_len,
             )
 
-            return parse_frame(
+            parsed = protocol.parse_frame(
                 frame=frame,
                 inverter_name=inverter_name,
                 expected_inverter_id=expected_inverter_id,
@@ -499,6 +404,10 @@ def collect_once(
                 crc_order=crc_order,
                 verify_crc=verify_crc,
             )
+            return {
+                **timestamp_fields(),
+                **parsed,
+            }
 
         except RuntimeError as e:
             if attempt >= read_retries or not is_retryable_frame_error(e):
@@ -638,17 +547,29 @@ def main() -> None:
         print_config_template()
         return
 
+    protocol = get_protocol(
+        os.getenv("INVERTER_PROTOCOL", "inoelectric_iepvs_g1_g2")
+    )
     inverter_name = os.getenv("INVERTER_NAME", "Unknown Inverter")
     inverter_id = int(os.getenv("INVERTER_ID", "1"))
-    request_hex = os.getenv("INVERTER_REQUEST_HEX")
+    request_hex = os.getenv("INVERTER_REQUEST_HEX", protocol.default_request_hex)
 
     if not request_hex:
         raise RuntimeError("INVERTER_REQUEST_HEX is not set")
 
     request = parse_hex(request_hex)
-    frame_len = int(os.getenv("INVERTER_FRAME_LENGTH", "33"))
-    data_len = int(os.getenv("INVERTER_DATA_LENGTH", "26"))
-    crc_order = os.getenv("INVERTER_CRC_ORDER", "LH").strip().upper()
+    frame_len = int(os.getenv(
+        "INVERTER_FRAME_LENGTH",
+        str(protocol.default_frame_length),
+    ))
+    data_len = int(os.getenv(
+        "INVERTER_DATA_LENGTH",
+        str(protocol.default_data_length),
+    ))
+    crc_order = os.getenv(
+        "INVERTER_CRC_ORDER",
+        protocol.default_crc_order,
+    ).strip().upper()
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
     collect_interval = get_loop_interval(args.loop, args.interval)
@@ -751,6 +672,7 @@ def main() -> None:
                 timeout=args.timeout,
                 request=request,
                 inverter_name=inverter_name,
+                protocol=protocol,
                 expected_inverter_id=inverter_id,
                 expected_frame_len=frame_len,
                 expected_data_len=data_len,
