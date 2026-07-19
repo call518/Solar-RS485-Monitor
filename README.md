@@ -151,6 +151,8 @@ The request frame, response frame length, data offsets, scaling rules, CRC order
 - Response validation: set `INVERTER_FRAME_LENGTH`, `INVERTER_DATA_LENGTH`, `INVERTER_CRC_ORDER`, and `INVERTER_ID` according to the product's response format.
 - Response parsing: add a product-specific protocol module under `src/solar_rs485_monitor/protocols/` and select it with `INVERTER_PROTOCOL` if the product returns fields at different byte offsets, uses different units, or uses different scaling.
 
+When adding a new product-specific protocol module, use `src/solar_rs485_monitor/protocols/inoelectric_iepvs_g1_g2.py` as the reference example. The product's `parse_frame()` should validate the frame, verify CRC when enabled, decode payload offsets, and apply unit scaling. The module's `PROTOCOL` object should register the request frame, default response lengths, and CRC byte order. After adding a module, update the registry in `src/solar_rs485_monitor/protocols/base.py` and add a sample-frame test in `tests/test_protocols.py`.
+
 Do not assume another RS485 inverter will expose the same data layout just because the serial/TCP connection succeeds.
 
 ## Current Connection Modes
@@ -410,6 +412,20 @@ This section summarizes the protocol currently supported by the default profile 
 The supported protocol is the Renewable Energy Monitoring System (REMS) protocol.
 
 Other inverter models can use different request commands, response lengths, data offsets, scaling rules, and CRC byte order. Do not assume the layout below applies to another model without checking that product's manual.
+
+### Protocol Processing Flow
+
+The collector loads the default request frame and `parse_frame()` function from the selected `INVERTER_PROTOCOL` profile. One read cycle follows this flow:
+
+1. Send the `INVERTER_REQUEST_HEX` request frame over the RS485 connection.
+2. Read the response frame up to `INVERTER_FRAME_LENGTH`.
+3. Validate frame length, SOP `0x7E`, inverter ID, response command `0x02`, and data length.
+4. If `INVERTER_VERIFY_CRC=true`, read the final two CRC bytes using `INVERTER_CRC_ORDER` and compare them with the CRC16/Modbus calculation.
+5. Slice off the 5-byte header and decode the 26-byte payload according to the product manual's offsets.
+6. Convert scaled values such as power factor, frequency, and total generation into the common output units.
+7. Return one dict containing `inverter_name`, `inverter_id`, metrics, `fault_code`, and `raw_frame_hex` for JSON output and sink storage.
+
+When adding another product, keep this flow but verify the request frame, response command, payload length, field offsets, endian order, scaling rules, and CRC behavior against that product's manual.
 
 ### Request Frame
 
