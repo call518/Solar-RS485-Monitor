@@ -8,6 +8,9 @@ from solar_rs485_monitor.alerts.message import (
     build_fault_event_message,
     build_sink_error_message,
     build_summary_message,
+    build_system_error_message,
+    build_system_recovered_message,
+    format_code,
     parse_int_value,
 )
 
@@ -65,9 +68,13 @@ def get_telegram_config() -> dict:
             "TELEGRAM_SEND_SINK_ERROR",
             "true",
         ).strip().lower() in ("1", "true", "yes", "y", "on"),
+        "send_system_error": os.getenv(
+            "TELEGRAM_SEND_SYSTEM_ERROR",
+            "true",
+        ).strip().lower() in ("1", "true", "yes", "y", "on"),
         "send_standby_event": os.getenv(
             "TELEGRAM_SEND_STANDBY_EVENT",
-            "false",
+            "true",
         ).strip().lower() in ("1", "true", "yes", "y", "on"),
     }
 
@@ -162,10 +169,11 @@ def build_operation_state_message(data: dict, fault_code: int, state: str) -> st
     return "\n".join(
         [
             f"*Solar RS485 {title} Event*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Fault code: `{fault_code}`",
-            f"State: `{state} (Bit 0 = {bit_value})`",
+            f"Time: {format_code(data.get('@timestamp', '-'))}",
+            f"Inverter: {format_code(data.get('inverter_name', '-'))} "
+            f"(ID {format_code(data.get('inverter_id', '-'))})",
+            f"Fault code: {format_code(fault_code)}",
+            f"State: {format_code(f'{state} (Bit 0 = {bit_value})')}",
         ]
     )
 
@@ -249,6 +257,7 @@ def send_sink_error_alert(
     config: dict,
     sink: str,
     error: Exception,
+    event: str = "sink_insert_failed",
 ) -> dict:
     if not config.get("send_sink_error", True):
         return {
@@ -260,7 +269,76 @@ def send_sink_error_alert(
 
     result = send_to_all_chat_ids(
         config,
-        build_sink_error_message(data=data, sink=sink, error=error),
+        build_sink_error_message(
+            data=data,
+            sink=sink,
+            error=error,
+            event=event,
+        ),
+    )
+    return {
+        **result,
+        "skipped": False,
+        "chat_ids": config.get("chat_ids", []),
+    }
+
+
+def send_system_error_alert(
+    data: dict,
+    config: dict,
+    component: str,
+    event: str,
+    error: Exception,
+    failures: int | None = None,
+) -> dict:
+    if not config.get("send_system_error", True):
+        return {
+            "sent": [],
+            "failed": [],
+            "skipped": True,
+            "chat_ids": config.get("chat_ids", []),
+        }
+
+    result = send_to_all_chat_ids(
+        config,
+        build_system_error_message(
+            data=data,
+            component=component,
+            event=event,
+            error=error,
+            failures=failures,
+        ),
+    )
+    return {
+        **result,
+        "skipped": False,
+        "chat_ids": config.get("chat_ids", []),
+    }
+
+
+def send_system_recovered_alert(
+    data: dict,
+    config: dict,
+    component: str,
+    event: str,
+    failures: int,
+) -> dict:
+    if not config.get("send_system_error", True):
+        return {
+            "sent": [],
+            "failed": [],
+            "skipped": True,
+            "chat_ids": config.get("chat_ids", []),
+        }
+
+    result = send_to_all_chat_ids(
+        config,
+        build_system_recovered_message(
+            data=data,
+            component=component,
+            event=event,
+            failures=failures,
+        ),
     )
     return {
         **result,

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
@@ -44,13 +45,19 @@ from solar_rs485_monitor.alerts.dispatcher import (
     list_alert_handler_names,
     parse_alert_channels,
 )
-from solar_rs485_monitor.alerts.telegram import send_sink_error_alert
+from solar_rs485_monitor.alerts.telegram import (
+    send_sink_error_alert,
+    send_system_error_alert,
+    send_system_recovered_alert,
+)
 from solar_rs485_monitor.protocols import InverterProtocol, get_protocol
 from solar_rs485_monitor.version import get_version
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 MIN_COLLECT_INTERVAL_SECONDS = 60.0
+DEFAULT_ALERT_COOLDOWN_SECONDS = 900.0
+DEFAULT_COLLECTOR_FAILURE_ALERT_THRESHOLD = 3
 SUPPORTED_COLLECTOR_SINKS = (
     "all",
     "google_sheet",
@@ -62,6 +69,24 @@ SUPPORTED_COLLECTOR_SINKS = (
 )
 
 
+@dataclass
+class AlertRuntimeState:
+    cooldown_seconds: float
+    last_sent_at_by_key: dict[str, float] = field(default_factory=dict)
+
+    def can_send(self, key: str, now: float | None = None) -> bool:
+        current_time = now if now is not None else time.monotonic()
+        last_sent_at = self.last_sent_at_by_key.get(key)
+
+        if last_sent_at is not None:
+            elapsed = current_time - last_sent_at
+            if elapsed < self.cooldown_seconds:
+                return False
+
+        self.last_sent_at_by_key[key] = current_time
+        return True
+
+
 def parse_hex(value: str) -> bytes:
     return bytes.fromhex(value.replace(" ", ""))
 
@@ -69,6 +94,14 @@ def parse_hex(value: str) -> bytes:
 def env_bool(name: str, default: str = "false") -> bool:
     value = os.getenv(name, default).strip().lower()
     return value in ("1", "true", "yes", "y", "on")
+
+
+def env_float(name: str, default: str) -> float:
+    return float(os.getenv(name, default))
+
+
+def env_int(name: str, default: str) -> int:
+    return int(os.getenv(name, default))
 
 
 def parse_optional_interval(value: str) -> float | None:
@@ -110,6 +143,7 @@ def parse_collector_sinks(value: str) -> set[str]:
         return set()
 
     aliases = {
+        "all": "all",
         "google_sheet": "google_sheet",
         "google-sheet": "google_sheet",
         "google_sheets": "google_sheet",
@@ -130,9 +164,6 @@ def parse_collector_sinks(value: str) -> set[str]:
         if item.strip()
     }
 
-    if "all" in requested:
-        return {"all"}
-
     sinks = set()
     invalid = []
 
@@ -146,14 +177,17 @@ def parse_collector_sinks(value: str) -> set[str]:
         sinks.add(canonical)
 
     if invalid:
-        print(
-            "WARNING: Ignoring invalid COLLECTOR_SINKS value(s): "
-            + ", ".join(sorted(invalid))
-            + ". Supported values: "
-            + ", ".join(SUPPORTED_COLLECTOR_SINKS),
-            file=sys.stderr,
-            flush=True,
+        warning_event(
+            event="config_invalid_value",
+            component="config",
+            field="COLLECTOR_SINKS",
+            invalid_values=sorted(invalid),
+            supported_values=list(SUPPORTED_COLLECTOR_SINKS),
+            action="skipped",
         )
+
+    if "all" in sinks:
+        return {"all"}
 
     return sinks
 
@@ -271,22 +305,54 @@ def print_section_json(title: str, data: dict) -> None:
     print_json(data)
 
 
-def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
-    print_section_json(sink, {
+def log_event(
+    section: str,
+    level: str,
+    event: str,
+    component: str,
+    **fields,
+) -> None:
+    print_section_json(section, {
         **timestamp_fields(),
-        "inverter_name": inverter_name,
-        "sink": sink,
-        "error": str(error),
+        "level": level,
+        "event": event,
+        "component": component,
+        **fields,
     })
+
+
+def warning_event(event: str, component: str, **fields) -> None:
+    log_event(
+        section=f"[Warning] {component}",
+        level="warning",
+        event=event,
+        component=component,
+        **fields,
+    )
+
+
+def print_sink_error(inverter_name: str, sink: str, error: Exception) -> None:
+    log_event(
+        section=f"[Sink] {sink}",
+        level="error",
+        event="sink_error",
+        component="sink",
+        inverter_name=inverter_name,
+        sink=sink,
+        error=str(error),
+    )
 
 
 def print_alert_error(inverter_name: str, alert: str, error: Exception) -> None:
-    print_section_json(alert, {
-        **timestamp_fields(),
-        "inverter_name": inverter_name,
-        "alert": alert,
-        "error": str(error),
-    })
+    log_event(
+        section=f"[Alert] {alert}",
+        level="error",
+        event="alert_error",
+        component="alert",
+        inverter_name=inverter_name,
+        alert=alert,
+        error=str(error),
+    )
 
 
 def handle_sink_error(
@@ -295,15 +361,34 @@ def handle_sink_error(
     data: dict,
     sink: str,
     error: Exception,
+    alert_state: AlertRuntimeState,
+    event: str = "sink_write_failed",
+    log_error: bool = True,
 ) -> None:
-    print_sink_error(
-        inverter_name=inverter_name,
-        sink=sink,
-        error=error,
-    )
+    if log_error:
+        print_sink_error(
+            inverter_name=inverter_name,
+            sink=sink,
+            error=error,
+        )
 
     telegram_config = alert_configs.get("telegram")
     if telegram_config is None:
+        return
+
+    cooldown_key = f"{event}:{sink}:{type(error).__name__}:{error}"
+    if not alert_state.can_send(cooldown_key):
+        log_event(
+            section="[Alert] Telegram",
+            level="warning",
+            event="alert_suppressed",
+            component="alert",
+            inverter_name=inverter_name,
+            alert="telegram",
+            suppressed_event=event,
+            sink=sink,
+            reason="cooldown",
+        )
         return
 
     try:
@@ -312,15 +397,112 @@ def handle_sink_error(
             config=telegram_config,
             sink=sink,
             error=error,
+            event=event,
         )
-        print_section_json("[Alert] Telegram", {
-            **timestamp_fields(),
-            "inverter_name": inverter_name,
-            "alert": "telegram",
-            "event": "sink_insert_failed",
-            "sink": sink,
+        log_event(
+            section="[Alert] Telegram",
+            level="warning" if alert_result.get("failed") else "info",
+            event="alert_sent",
+            component="alert",
+            inverter_name=inverter_name,
+            alert="telegram",
+            alert_event=event,
+            sink=sink,
             **summarize_alert_result(alert_result),
-        })
+        )
+    except Exception as e:
+        print_alert_error(
+            inverter_name=inverter_name,
+            alert="telegram",
+            error=e,
+        )
+
+
+def send_system_error_notification(
+    inverter_name: str,
+    alert_configs: dict[str, dict],
+    data: dict,
+    component: str,
+    event: str,
+    error: Exception,
+    alert_state: AlertRuntimeState,
+    failures: int | None = None,
+) -> None:
+    telegram_config = alert_configs.get("telegram")
+    if telegram_config is None:
+        return
+
+    cooldown_key = f"{event}:{component}:{type(error).__name__}:{error}"
+    if not alert_state.can_send(cooldown_key):
+        log_event(
+            section="[Alert] Telegram",
+            level="warning",
+            event="alert_suppressed",
+            component="alert",
+            inverter_name=inverter_name,
+            alert="telegram",
+            suppressed_event=event,
+            reason="cooldown",
+        )
+        return
+
+    try:
+        alert_result = send_system_error_alert(
+            data=data,
+            config=telegram_config,
+            component=component,
+            event=event,
+            error=error,
+            failures=failures,
+        )
+        log_event(
+            section="[Alert] Telegram",
+            level="warning" if alert_result.get("failed") else "info",
+            event="alert_sent",
+            component="alert",
+            inverter_name=inverter_name,
+            alert="telegram",
+            alert_event=event,
+            **summarize_alert_result(alert_result),
+        )
+    except Exception as e:
+        print_alert_error(
+            inverter_name=inverter_name,
+            alert="telegram",
+            error=e,
+        )
+
+
+def send_system_recovered_notification(
+    inverter_name: str,
+    alert_configs: dict[str, dict],
+    data: dict,
+    component: str,
+    event: str,
+    failures: int,
+) -> None:
+    telegram_config = alert_configs.get("telegram")
+    if telegram_config is None:
+        return
+
+    try:
+        alert_result = send_system_recovered_alert(
+            data=data,
+            config=telegram_config,
+            component=component,
+            event=event,
+            failures=failures,
+        )
+        log_event(
+            section="[Alert] Telegram",
+            level="warning" if alert_result.get("failed") else "info",
+            event="alert_sent",
+            component="alert",
+            inverter_name=inverter_name,
+            alert="telegram",
+            alert_event=event,
+            **summarize_alert_result(alert_result),
+        )
     except Exception as e:
         print_alert_error(
             inverter_name=inverter_name,
@@ -587,6 +769,22 @@ def main() -> None:
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
     collect_interval = get_loop_interval(args.loop, args.interval)
+    alert_state = AlertRuntimeState(
+        cooldown_seconds=max(
+            0.0,
+            env_float(
+                "ALERT_COOLDOWN_SECONDS",
+                str(DEFAULT_ALERT_COOLDOWN_SECONDS),
+            ),
+        )
+    )
+    collector_failure_alert_threshold = max(
+        1,
+        env_int(
+            "COLLECTOR_FAILURE_ALERT_THRESHOLD",
+            str(DEFAULT_COLLECTOR_FAILURE_ALERT_THRESHOLD),
+        ),
+    )
 
     apply_sink_selection(args)
     apply_alert_selection(args)
@@ -600,6 +798,7 @@ def main() -> None:
         args.opensearch = bool(os.getenv("OPENSEARCH_URL", "").strip())
 
     requested_alert_channels = get_requested_alert_channels(args)
+    pending_sink_init_errors: list[tuple[str, Exception]] = []
 
     google_sheet_enabled = False
     if args.google_sheet:
@@ -607,55 +806,65 @@ def main() -> None:
             get_google_sheet()
             google_sheet_enabled = True
         except Exception as e:
+            error = RuntimeError(f"initialization failed: {e}")
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="google_sheet",
-                error=RuntimeError(f"initialization failed: {e}"),
+                error=error,
             )
+            pending_sink_init_errors.append(("google_sheet", error))
 
     mariadb_config = None
     if args.mariadb:
         try:
             mariadb_config = get_mariadb_config()
         except Exception as e:
+            error = RuntimeError(f"initialization failed: {e}")
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="mariadb",
-                error=RuntimeError(f"initialization failed: {e}"),
+                error=error,
             )
+            pending_sink_init_errors.append(("mariadb", error))
 
     sqlite_config = None
     if args.sqlite:
         try:
             sqlite_config = get_sqlite_config()
         except Exception as e:
+            error = RuntimeError(f"initialization failed: {e}")
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="sqlite",
-                error=RuntimeError(f"initialization failed: {e}"),
+                error=error,
             )
+            pending_sink_init_errors.append(("sqlite", error))
 
     supabase_config = None
     if args.supabase:
         try:
             supabase_config = get_supabase_config()
         except Exception as e:
+            error = RuntimeError(f"initialization failed: {e}")
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="supabase",
-                error=RuntimeError(f"initialization failed: {e}"),
+                error=error,
             )
+            pending_sink_init_errors.append(("supabase", error))
 
     opensearch_config = None
     if args.opensearch:
         try:
             opensearch_config = get_opensearch_config()
         except Exception as e:
+            error = RuntimeError(f"initialization failed: {e}")
             print_sink_error(
                 inverter_name=inverter_name,
                 sink="opensearch",
-                error=RuntimeError(f"initialization failed: {e}"),
+                error=error,
             )
+            pending_sink_init_errors.append(("opensearch", error))
 
     alert_configs: dict[str, dict] = {}
     for channel in sorted(requested_alert_channels):
@@ -678,6 +887,24 @@ def main() -> None:
                 error=RuntimeError(f"initialization failed: {e}"),
             )
 
+    for sink, error in pending_sink_init_errors:
+        handle_sink_error(
+            inverter_name=inverter_name,
+            alert_configs=alert_configs,
+            data={
+                **timestamp_fields(),
+                "inverter_name": inverter_name,
+                "inverter_id": inverter_id,
+            },
+            sink=sink,
+            error=error,
+            alert_state=alert_state,
+            event="sink_init_failed",
+            log_error=False,
+        )
+
+    consecutive_collector_failures = 0
+
     while True:
         try:
             result = collect_once(
@@ -695,6 +922,17 @@ def main() -> None:
                 read_retries=read_retries,
             )
 
+            if consecutive_collector_failures >= collector_failure_alert_threshold:
+                send_system_recovered_notification(
+                    inverter_name=inverter_name,
+                    alert_configs=alert_configs,
+                    data=result,
+                    component="collector",
+                    event="collector_recovered",
+                    failures=consecutive_collector_failures,
+                )
+
+            consecutive_collector_failures = 0
             print_section_json("inverter", result)
 
             if google_sheet_enabled:
@@ -714,6 +952,7 @@ def main() -> None:
                         data=result,
                         sink="google_sheet",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             if args.thingspeak:
@@ -737,6 +976,7 @@ def main() -> None:
                         data=result,
                         sink="thingspeak",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             if mariadb_config is not None:
@@ -758,6 +998,7 @@ def main() -> None:
                         data=result,
                         sink="mariadb",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             if sqlite_config is not None:
@@ -780,6 +1021,7 @@ def main() -> None:
                         data=result,
                         sink="sqlite",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             if opensearch_config is not None:
@@ -803,6 +1045,7 @@ def main() -> None:
                         data=result,
                         sink="opensearch",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             if supabase_config is not None:
@@ -828,6 +1071,7 @@ def main() -> None:
                         data=result,
                         sink="supabase",
                         error=e,
+                        alert_state=alert_state,
                     )
 
             for channel, config in alert_configs.items():
@@ -838,12 +1082,21 @@ def main() -> None:
                         config=config,
                     )
 
-                    print_section_json(f"[Alert] {channel.capitalize()}", {
-                        **timestamp_fields(),
-                        "inverter_name": inverter_name,
-                        "alert": channel,
-                        **summarize_alert_result(alert_result),
-                    })
+                    alert_summary = summarize_alert_result(alert_result)
+                    failed_count = (
+                        alert_summary.get("failed_count", 0)
+                        + alert_summary.get("summary_failed_count", 0)
+                        + alert_summary.get("fault_event_failed_count", 0)
+                    )
+                    log_event(
+                        section=f"[Alert] {channel.capitalize()}",
+                        level="warning" if failed_count else "info",
+                        event="alert_result",
+                        component="alert",
+                        inverter_name=inverter_name,
+                        alert=channel,
+                        **alert_summary,
+                    )
                 except Exception as e:
                     print_alert_error(
                         inverter_name=inverter_name,
@@ -852,11 +1105,32 @@ def main() -> None:
                     )
 
         except Exception as e:
-            print_section_json("[Collector] JSON Raw-Data", {
+            consecutive_collector_failures += 1
+            failure_data = {
                 **timestamp_fields(),
                 "inverter_name": inverter_name,
-                "error": str(e),
-            })
+                "inverter_id": inverter_id,
+            }
+            log_event(
+                section="[Collector]",
+                level="error",
+                event="collector_failed",
+                component="collector",
+                inverter_name=inverter_name,
+                failures=consecutive_collector_failures,
+                error=str(e),
+            )
+            if consecutive_collector_failures >= collector_failure_alert_threshold:
+                send_system_error_notification(
+                    inverter_name=inverter_name,
+                    alert_configs=alert_configs,
+                    data=failure_data,
+                    component="collector",
+                    event="collector_failed",
+                    error=e,
+                    alert_state=alert_state,
+                    failures=consecutive_collector_failures,
+                )
 
         if collect_interval is None:
             break

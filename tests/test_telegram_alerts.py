@@ -19,6 +19,14 @@ def make_config() -> dict:
     }
 
 
+def test_telegram_config_enables_standby_events_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("TELEGRAM_SEND_STANDBY_EVENT", raising=False)
+
+    config = telegram.get_telegram_config()
+
+    assert config["send_standby_event"] is True
+
+
 def test_standby_and_normal_transitions_send_operation_events(monkeypatch) -> None:
     sent_messages = []
 
@@ -113,6 +121,54 @@ def test_sink_error_alert_can_be_disabled(monkeypatch) -> None:
         config={**make_config(), "send_sink_error": False},
         sink="sqlite",
         error=RuntimeError("database is locked"),
+    )
+
+    assert result["skipped"] is True
+    assert sent_messages == []
+
+
+def test_sink_error_alert_escapes_backticks(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    telegram.send_sink_error_alert(
+        data={**make_data(0), "inverter_name": "bad`name"},
+        config={**make_config(), "send_sink_error": True},
+        sink="sqlite",
+        error=RuntimeError("database `locked`"),
+    )
+
+    assert "bad'name" in sent_messages[0]
+    assert "database 'locked'" in sent_messages[0]
+
+
+def test_system_error_alert_can_be_disabled(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    result = telegram.send_system_error_alert(
+        data=make_data(0),
+        config={**make_config(), "send_system_error": False},
+        component="collector",
+        event="collector_failed",
+        error=RuntimeError("No response from inverter"),
+        failures=3,
     )
 
     assert result["skipped"] is True

@@ -1,4 +1,7 @@
+import json
+import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
 
 from solar_rs485_monitor.alerts.telegram import (
@@ -26,6 +29,31 @@ _ALERT_HANDLERS: dict[str, AlertHandler] = {
         send=send_telegram_alert,
     ),
 }
+SUPPORTED_ALERT_CHANNELS = ("all", *tuple(sorted(_ALERT_HANDLERS.keys())))
+
+
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def print_alert_channel_warning(invalid_values: list[str]) -> None:
+    print(
+        json.dumps(
+            {
+                "@timestamp": now_utc_iso(),
+                "level": "warning",
+                "event": "config_invalid_value",
+                "component": "config",
+                "field": "ALERT_CHANNELS",
+                "invalid_values": sorted(invalid_values),
+                "supported_values": list(SUPPORTED_ALERT_CHANNELS),
+                "action": "skipped",
+            },
+            ensure_ascii=False,
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def list_alert_handler_names() -> list[str]:
@@ -57,15 +85,15 @@ def parse_alert_channels(value: str) -> set[str]:
     if not channel_text:
         return set()
 
-    aliases = get_alert_aliases()
+    aliases = {
+        "all": "all",
+        **get_alert_aliases(),
+    }
     requested = {
         item.strip().lower().replace("-", "_")
         for item in channel_text.split(",")
         if item.strip()
     }
-
-    if "all" in requested:
-        return {"all"}
 
     channels = set()
     invalid = []
@@ -80,9 +108,9 @@ def parse_alert_channels(value: str) -> set[str]:
         channels.add(canonical)
 
     if invalid:
-        raise RuntimeError(
-            "Invalid ALERT_CHANNELS value(s): "
-            + ", ".join(sorted(invalid))
-        )
+        print_alert_channel_warning(invalid)
+
+    if "all" in channels:
+        return {"all"}
 
     return channels

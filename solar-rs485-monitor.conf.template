@@ -21,7 +21,14 @@ COLLECTOR_SINKS=""
 # [Alert][Optional] Default alert channels used only when no alert CLI flags are provided.
 # [Alert][Optional] Leave empty for measurement-only collection.
 # [Alert][Optional] Supported values: all, telegram
+# [Alert][Optional] Unknown alert channel names are skipped after a warning.
 ALERT_CHANNELS=""
+
+# [Alert][Optional] Minimum seconds before repeating the same operational alert.
+ALERT_COOLDOWN_SECONDS="900"
+
+# [Alert][Optional] Send collector failure alerts after this many consecutive failures.
+COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
@@ -138,9 +145,10 @@ TELEGRAM_PARSE_MODE="Markdown"
 TELEGRAM_SEND_SUMMARY="false"
 TELEGRAM_SEND_FAULT_EVENT="true"
 TELEGRAM_SEND_SINK_ERROR="true"
+TELEGRAM_SEND_SYSTEM_ERROR="true"
 # [Alert][Optional] Also send Telegram alert on operation-state transitions
 # [Alert][Optional] (standby Bit 0: 0 -> 1, normal Bit 0: 1 -> 0).
-# [Alert][Optional] Default is false to preserve existing behavior.
+# [Alert][Optional] Default is true.
 TELEGRAM_SEND_STANDBY_EVENT="true"
 
 #

@@ -10,6 +10,11 @@ def has_fault_event(fault_code: int) -> bool:
     return (fault_code & 0xFFFE) != 0
 
 
+def format_code(value) -> str:
+    text = str(value).replace("`", "'")
+    return f"`{text}`"
+
+
 def format_active_bits(fault_code: int) -> str:
     if fault_code <= 0:
         return "-"
@@ -26,26 +31,28 @@ def build_summary_message(data: dict) -> str:
     return "\n".join(
         [
             "*Solar RS485 Monitor*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Fault: `{fault}`",
-            f"Fault code: `{fault_code}`",
-            f"Active bits: `{active_bits}`",
+            f"Time: {format_code(data.get('@timestamp', '-'))}",
+            f"Inverter: {format_code(data.get('inverter_name', '-'))} "
+            f"(ID {format_code(data.get('inverter_id', '-'))})",
+            f"Fault: {format_code(fault)}",
+            f"Fault code: {format_code(fault_code)}",
+            f"Active bits: {format_code(active_bits)}",
             "",
             "*DC Input*",
-            f"- Voltage: `{data.get('input_dc_voltage_v', '-')}` V",
-            f"- Current: `{data.get('input_dc_current_a', '-')}` A",
-            f"- Power: `{data.get('input_dc_power_w', '-')}` W",
+            f"- Voltage: {format_code(data.get('input_dc_voltage_v', '-'))} V",
+            f"- Current: {format_code(data.get('input_dc_current_a', '-'))} A",
+            f"- Power: {format_code(data.get('input_dc_power_w', '-'))} W",
             "",
             "*AC Output*",
-            f"- Voltage: `{data.get('output_ac_voltage_v', '-')}` V",
-            f"- Current: `{data.get('output_ac_current_a', '-')}` A",
-            f"- Power: `{data.get('output_ac_power_w', '-')}` W",
-            f"- Power factor: `{data.get('output_ac_power_factor_pct', '-')}` %",
-            f"- Frequency: `{data.get('output_ac_frequency_hz', '-')}` Hz",
+            f"- Voltage: {format_code(data.get('output_ac_voltage_v', '-'))} V",
+            f"- Current: {format_code(data.get('output_ac_current_a', '-'))} A",
+            f"- Power: {format_code(data.get('output_ac_power_w', '-'))} W",
+            f"- Power factor: "
+            f"{format_code(data.get('output_ac_power_factor_pct', '-'))} %",
+            f"- Frequency: {format_code(data.get('output_ac_frequency_hz', '-'))} Hz",
             "",
-            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
-            f"Raw frame: `{data.get('raw_frame_hex', '-')}`",
+            f"Total: {format_code(data.get('total_generation_kwh', '-'))} kWh",
+            f"Raw frame: {format_code(data.get('raw_frame_hex', '-'))}",
         ]
     )
 
@@ -58,40 +65,95 @@ def build_fault_event_message(data: dict) -> str:
     return "\n".join(
         [
             "*Solar RS485 Fault Event*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Fault: `{fault}`",
-            f"Fault code: `{fault_code}`",
-            f"Active bits: `{active_bits}`",
+            f"Time: {format_code(data.get('@timestamp', '-'))}",
+            f"Inverter: {format_code(data.get('inverter_name', '-'))} "
+            f"(ID {format_code(data.get('inverter_id', '-'))})",
+            f"Fault: {format_code(fault)}",
+            f"Fault code: {format_code(fault_code)}",
+            f"Active bits: {format_code(active_bits)}",
             "",
             "*DC Input*",
-            f"- Voltage: `{data.get('input_dc_voltage_v', '-')}` V",
-            f"- Current: `{data.get('input_dc_current_a', '-')}` A",
-            f"- Power: `{data.get('input_dc_power_w', '-')}` W",
+            f"- Voltage: {format_code(data.get('input_dc_voltage_v', '-'))} V",
+            f"- Current: {format_code(data.get('input_dc_current_a', '-'))} A",
+            f"- Power: {format_code(data.get('input_dc_power_w', '-'))} W",
             "",
             "*AC Output*",
-            f"- Voltage: `{data.get('output_ac_voltage_v', '-')}` V",
-            f"- Current: `{data.get('output_ac_current_a', '-')}` A",
-            f"- Power: `{data.get('output_ac_power_w', '-')}` W",
-            f"- Power factor: `{data.get('output_ac_power_factor_pct', '-')}` %",
-            f"- Frequency: `{data.get('output_ac_frequency_hz', '-')}` Hz",
+            f"- Voltage: {format_code(data.get('output_ac_voltage_v', '-'))} V",
+            f"- Current: {format_code(data.get('output_ac_current_a', '-'))} A",
+            f"- Power: {format_code(data.get('output_ac_power_w', '-'))} W",
+            f"- Power factor: "
+            f"{format_code(data.get('output_ac_power_factor_pct', '-'))} %",
+            f"- Frequency: {format_code(data.get('output_ac_frequency_hz', '-'))} Hz",
             "",
-            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
-            f"Raw frame: `{data.get('raw_frame_hex', '-')}`",
+            f"Total: {format_code(data.get('total_generation_kwh', '-'))} kWh",
+            f"Raw frame: {format_code(data.get('raw_frame_hex', '-'))}",
         ]
     )
 
 
-def build_sink_error_message(data: dict, sink: str, error: Exception) -> str:
+def build_sink_error_message(
+    data: dict,
+    sink: str,
+    error: Exception,
+    event: str = "sink_insert_failed",
+) -> str:
+    titles = {
+        "sink_init_failed": "Solar RS485 Sink Initialization Failed",
+        "sink_write_failed": "Solar RS485 Sink Write Failed",
+        "sink_insert_failed": "Solar RS485 Sink Insert Failed",
+    }
+    title = titles.get(event, "Solar RS485 Sink Error")
+
     return "\n".join(
         [
-            f"*Solar RS485 Sink Insert Failed: {sink}*",
-            f"Time: `{data.get('@timestamp', '-')}`",
-            f"Inverter: `{data.get('inverter_name', '-')}` (ID `{data.get('inverter_id', '-')}`)",
-            f"Sink: `{sink}`",
-            f"Error: `{str(error)}`",
+            f"*{title}: {sink}*",
+            f"Time: {format_code(data.get('@timestamp', '-'))}",
+            f"Inverter: {format_code(data.get('inverter_name', '-'))} "
+            f"(ID {format_code(data.get('inverter_id', '-'))})",
+            f"Sink: {format_code(sink)}",
+            f"Error: {format_code(error)}",
             "",
-            f"Total: `{data.get('total_generation_kwh', '-')}` kWh",
-            f"Fault code: `{data.get('fault_code', '-')}`",
+            f"Total: {format_code(data.get('total_generation_kwh', '-'))} kWh",
+            f"Fault code: {format_code(data.get('fault_code', '-'))}",
+        ]
+    )
+
+
+def build_system_error_message(
+    data: dict,
+    component: str,
+    event: str,
+    error: Exception,
+    failures: int | None = None,
+) -> str:
+    lines = [
+        "*Solar RS485 System Error*",
+        f"Time: {format_code(data.get('@timestamp', '-'))}",
+        f"Inverter: {format_code(data.get('inverter_name', '-'))}",
+        f"Component: {format_code(component)}",
+        f"Event: {format_code(event)}",
+        f"Error: {format_code(error)}",
+    ]
+
+    if failures is not None:
+        lines.append(f"Consecutive failures: {format_code(failures)}")
+
+    return "\n".join(lines)
+
+
+def build_system_recovered_message(
+    data: dict,
+    component: str,
+    event: str,
+    failures: int,
+) -> str:
+    return "\n".join(
+        [
+            "*Solar RS485 System Recovered*",
+            f"Time: {format_code(data.get('@timestamp', '-'))}",
+            f"Inverter: {format_code(data.get('inverter_name', '-'))}",
+            f"Component: {format_code(component)}",
+            f"Event: {format_code(event)}",
+            f"Recovered after failures: {format_code(failures)}",
         ]
     )

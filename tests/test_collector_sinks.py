@@ -16,8 +16,22 @@ def test_parse_collector_sinks_accepts_google_sheet_aliases() -> None:
     }
 
 
-def test_parse_collector_sinks_skips_unknown_sink(capsys: pytest.CaptureFixture[str]) -> None:
+def test_parse_collector_sinks_skips_unknown_sink(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert parse_collector_sinks("google_sheet,unknown") == {"google_sheet"}
 
     captured = capsys.readouterr()
-    assert "WARNING: Ignoring invalid COLLECTOR_SINKS value(s): unknown" in captured.err
+    assert '"level": "warning"' in captured.out
+    assert '"field": "COLLECTOR_SINKS"' in captured.out
+    assert '"invalid_values": [\n    "unknown"\n  ]' in captured.out
+
+
+def test_parse_collector_sinks_warns_unknown_sink_with_all(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse_collector_sinks("all,unknown") == {"all"}
+
+    captured = capsys.readouterr()
+    assert '"field": "COLLECTOR_SINKS"' in captured.out
+    assert '"unknown"' in captured.out
