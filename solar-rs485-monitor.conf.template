@@ -13,6 +13,7 @@ PYTHON_VENV_PATH="/opt/myapp/.venv"
 # [Sink][Optional] Leave empty for measurement-only collection.
 # [Sink][Optional] Supported values: all, google_sheet, thingspeak, mariadb, supabase, sqlite, opensearch
 # [Sink][Optional] Multiple sinks can be comma-separated, for example: mariadb,thingspeak
+# [Sink][Optional] Unknown sink names are skipped after writing a warning to the service log.
 # COLLECTOR_SINKS="google_sheet, thingspeak, mariadb, supabase, sqlite, opensearch"
 # COLLECTOR_SINKS="all"
 COLLECTOR_SINKS=""

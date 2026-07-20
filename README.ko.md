@@ -292,7 +292,7 @@ ALERT_CHANNELS=""
 
 `PYTHON_VENV_PATH`는 샘플 systemd unit에서 collector와 dashboard 실행 전에 `PATH` 앞에 `${PYTHON_VENV_PATH}/bin`을 추가할 때 사용합니다.
 
-`COLLECTOR_SINKS`는 명령행에 sink 옵션을 하나도 주지 않았을 때만 사용됩니다. `all` 또는 `mariadb,thingspeak,opensearch` 같은 comma-separated 목록을 사용합니다.
+`COLLECTOR_SINKS`는 명령행에 sink 옵션을 하나도 주지 않았을 때만 사용됩니다. `all` 또는 `mariadb,thingspeak,opensearch` 같은 comma-separated 목록을 사용합니다. 알 수 없는 sink 이름은 서비스 로그에 경고를 남긴 뒤 건너뜁니다.
 
 `ALERT_CHANNELS`는 명령행에 alert 옵션을 하나도 주지 않았을 때만 사용됩니다. `all` 또는 `telegram` 같은 comma-separated 목록을 사용합니다.
 

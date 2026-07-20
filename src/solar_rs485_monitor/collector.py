@@ -51,6 +51,15 @@ from solar_rs485_monitor.version import get_version
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
 CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 MIN_COLLECT_INTERVAL_SECONDS = 60.0
+SUPPORTED_COLLECTOR_SINKS = (
+    "all",
+    "google_sheet",
+    "thingspeak",
+    "mariadb",
+    "supabase",
+    "sqlite",
+    "opensearch",
+)
 
 
 def parse_hex(value: str) -> bytes:
@@ -101,6 +110,7 @@ def parse_collector_sinks(value: str) -> set[str]:
         return set()
 
     aliases = {
+        "google_sheet": "google_sheet",
         "google-sheet": "google_sheet",
         "google_sheets": "google_sheet",
         "googlesheet": "google_sheet",
@@ -136,9 +146,13 @@ def parse_collector_sinks(value: str) -> set[str]:
         sinks.add(canonical)
 
     if invalid:
-        raise RuntimeError(
-            "Invalid COLLECTOR_SINKS value(s): "
+        print(
+            "WARNING: Ignoring invalid COLLECTOR_SINKS value(s): "
             + ", ".join(sorted(invalid))
+            + ". Supported values: "
+            + ", ".join(SUPPORTED_COLLECTOR_SINKS),
+            file=sys.stderr,
+            flush=True,
         )
 
     return sinks

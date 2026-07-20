@@ -294,7 +294,7 @@ The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to det
 
 `PYTHON_VENV_PATH` is used by the sample systemd units to prepend `${PYTHON_VENV_PATH}/bin` to `PATH` before launching the collector and dashboard commands.
 
-`COLLECTOR_SINKS` is used only when no sink CLI flags are provided. Use `all` or a comma-separated list such as `mariadb,thingspeak,opensearch`.
+`COLLECTOR_SINKS` is used only when no sink CLI flags are provided. Use `all` or a comma-separated list such as `mariadb,thingspeak,opensearch`. Unknown sink names are skipped after a warning is written to the service log.
 
 `ALERT_CHANNELS` is used only when no alert CLI flags are provided. Use `all` or a comma-separated list such as `telegram`.
 
