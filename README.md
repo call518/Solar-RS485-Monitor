@@ -712,6 +712,7 @@ COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 COLLECTOR_STATE_PATH="/var/lib/solar-rs485-monitor/collector-state.json"
 COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 ```
 
 `TELEGRAM_BOT_TOKEN` is the bot API token from BotFather. `TELEGRAM_CHAT_IDS` accepts a comma-separated list of target chat/group IDs for fan-out delivery. For forum topics, set `TELEGRAM_MESSAGE_THREAD_ID`.
@@ -722,7 +723,7 @@ By default, the alert channel skips normal measurements and sends messages only 
 
 When `TELEGRAM_SEND_SINK_ERROR="true"`, Telegram also sends a message when an enabled sink fails to initialize, send, or insert data. When `TELEGRAM_SEND_SYSTEM_ERROR="true"`, repeated collector failures are sent after `COLLECTOR_FAILURE_ALERT_THRESHOLD` consecutive failures, and a recovery message is sent after collection succeeds again. `ALERT_COOLDOWN_SECONDS` suppresses repeated operational alerts with the same event and error.
 
-The collector writes the latest inverter state to `COLLECTOR_STATE_PATH`. When `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"` and that state says the inverter was in standby/off without a fault, `No response from inverter` is logged as expected standby behavior and does not trigger a system error alert. If the state file is deleted, missing, corrupt, or older than `COLLECTOR_STATE_MAX_AGE_SECONDS`, the collector treats the state as unknown and uses the normal failure threshold policy until the next successful collection recreates the file.
+The collector writes the latest inverter state to `COLLECTOR_STATE_PATH`. When `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"` and that state says the inverter was in standby/off without a fault, `No response from inverter` is logged as expected standby behavior and does not trigger a system error alert. If the state file is deleted, missing, corrupt, or older than `COLLECTOR_STATE_MAX_AGE_SECONDS`, the collector treats the state as unknown. During the first `COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS` seconds after startup, unknown-state `No response from inverter` events are also logged without a system error alert. After that grace period, the normal failure threshold policy applies until the next successful collection recreates the file.
 
 By default, Telegram notifies inverter standby/off and normal recovery transition events. Set `TELEGRAM_SEND_STANDBY_EVENT="false"` to disable them. This sends a message only when `fault_code` Bit 0 changes from `0` to `1` or `1` to `0` (transition-based), so repeated low-power nighttime samples do not spam duplicate standby messages. If Bit 1+ fault bits are active during a `1` to `0` transition, the sample is treated as a fault event instead of a normal event.
 

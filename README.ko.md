@@ -711,6 +711,7 @@ COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 COLLECTOR_STATE_PATH="/var/lib/solar-rs485-monitor/collector-state.json"
 COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 ```
 
 `TELEGRAM_BOT_TOKEN`은 BotFather에서 발급받은 봇 API 토큰입니다. `TELEGRAM_CHAT_IDS`는 fan-out 전송 대상 채팅/그룹 ID를 comma-separated 형식으로 설정합니다. Telegram 포럼 토픽에 보내려면 `TELEGRAM_MESSAGE_THREAD_ID`를 설정합니다.
@@ -721,7 +722,7 @@ COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
 
 `TELEGRAM_SEND_SINK_ERROR="true"`이면 활성화된 sink의 초기화/전송/insert 실패도 Telegram으로 전송합니다. `TELEGRAM_SEND_SYSTEM_ERROR="true"`이면 collector 실패가 `COLLECTOR_FAILURE_ALERT_THRESHOLD`회 연속 발생했을 때 Telegram으로 알리고, 이후 수집이 다시 성공하면 복구 메시지를 보냅니다. `ALERT_COOLDOWN_SECONDS`는 같은 event/error의 운영 알림 반복 전송을 제한합니다.
 
-collector는 마지막 인버터 상태를 `COLLECTOR_STATE_PATH`에 기록합니다. `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"`이고 이 상태 파일이 장애 없는 standby/off 상태를 가리키면, `No response from inverter`는 예상 가능한 standby 동작으로 로그만 남기고 system error alert는 보내지 않습니다. 상태 파일이 삭제되었거나 없거나 손상되었거나 `COLLECTOR_STATE_MAX_AGE_SECONDS`보다 오래되면 상태를 알 수 없는 것으로 보고, 다음 정상 수집이 파일을 다시 만들 때까지 기존 연속 실패 threshold 정책을 사용합니다.
+collector는 마지막 인버터 상태를 `COLLECTOR_STATE_PATH`에 기록합니다. `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"`이고 이 상태 파일이 장애 없는 standby/off 상태를 가리키면, `No response from inverter`는 예상 가능한 standby 동작으로 로그만 남기고 system error alert는 보내지 않습니다. 상태 파일이 삭제되었거나 없거나 손상되었거나 `COLLECTOR_STATE_MAX_AGE_SECONDS`보다 오래되면 상태를 알 수 없는 것으로 봅니다. 서비스 시작 후 `COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS`초 동안은 상태를 알 수 없는 `No response from inverter`도 system error alert 없이 로그만 남깁니다. 이 grace 기간이 지난 뒤에는 다음 정상 수집이 파일을 다시 만들 때까지 기존 연속 실패 threshold 정책을 사용합니다.
 
 Telegram은 기본적으로 인버터 대기/오프 전환과 정상 복귀 전환(Bit 0)도 알립니다. 끄려면 `TELEGRAM_SEND_STANDBY_EVENT="false"`로 설정하세요. 이 옵션은 `fault_code` Bit 0이 `0 -> 1` 또는 `1 -> 0`으로 바뀌는 전이 시점에만 1회 전송하도록 동작하므로, 야간 저전력 상태에서 같은 알림이 반복 전송되는 것을 방지합니다. 단, `1 -> 0` 전환 시 Bit 1+ 장애 비트가 함께 켜져 있으면 정상 이벤트 대신 장애 이벤트로 처리합니다.
 

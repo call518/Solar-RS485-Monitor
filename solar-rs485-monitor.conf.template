@@ -39,6 +39,10 @@ COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 # [Collector][Optional] Suppress No response system alerts while last state is standby.
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
 
+# [Collector][Optional] Also suppress No response system alerts for this many
+# [Collector][Optional] seconds after startup when no collector state exists yet.
+COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
+
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"

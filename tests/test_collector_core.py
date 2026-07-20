@@ -133,6 +133,24 @@ def test_missing_collector_state_file_is_unknown_not_error(tmp_path) -> None:
     assert collector.is_standby_state(state) is False
 
 
+def test_unknown_state_no_response_suppress_respects_grace_period() -> None:
+    assert collector.should_suppress_unknown_state_no_response(
+        process_started_at=100.0,
+        suppress_seconds=3600.0,
+        now=200.0,
+    ) is True
+    assert collector.should_suppress_unknown_state_no_response(
+        process_started_at=100.0,
+        suppress_seconds=3600.0,
+        now=3700.0,
+    ) is False
+    assert collector.should_suppress_unknown_state_no_response(
+        process_started_at=100.0,
+        suppress_seconds=0.0,
+        now=200.0,
+    ) is False
+
+
 def test_expired_collector_state_file_is_unknown(tmp_path) -> None:
     state_path = tmp_path / "collector-state.json"
     state_path.write_text(

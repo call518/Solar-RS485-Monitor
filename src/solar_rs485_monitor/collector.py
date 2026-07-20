@@ -62,6 +62,7 @@ DEFAULT_COLLECTOR_STATE_PATH = (
     "/var/lib/solar-rs485-monitor/collector-state.json"
 )
 DEFAULT_COLLECTOR_STATE_MAX_AGE_SECONDS = 86400.0
+DEFAULT_COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS = 43200.0
 FAULT_EVENT_MASK = 0xFFFE
 OPERATION_STOP_MASK = 0x0001
 SUPPORTED_COLLECTOR_SINKS = (
@@ -376,6 +377,19 @@ def is_standby_state(state: dict | None) -> bool:
         return False
 
     return bool(state.get("operation_stopped")) and not bool(state.get("has_fault"))
+
+
+def should_suppress_unknown_state_no_response(
+    process_started_at: float,
+    suppress_seconds: float,
+    now: float | None = None,
+) -> bool:
+    if suppress_seconds <= 0:
+        return False
+
+    current_time = now if now is not None else time.monotonic()
+    elapsed = current_time - process_started_at
+    return 0 <= elapsed < suppress_seconds
 
 
 def print_json(data: dict) -> None:
@@ -855,6 +869,7 @@ def main() -> None:
     verify_crc = env_bool("INVERTER_VERIFY_CRC", "true")
     read_retries = int(os.getenv("SERIAL_READ_RETRIES", "2"))
     collect_interval = get_loop_interval(args.loop, args.interval)
+    process_started_at = time.monotonic()
     alert_state = AlertRuntimeState(
         cooldown_seconds=max(
             0.0,
@@ -885,6 +900,13 @@ def main() -> None:
     standby_no_response_suppress = env_bool(
         "COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS",
         "true",
+    )
+    unknown_state_no_response_suppress_seconds = max(
+        0.0,
+        env_float(
+            "COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS",
+            str(DEFAULT_COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS),
+        ),
     )
 
     apply_sink_selection(args)
@@ -1227,6 +1249,26 @@ def main() -> None:
                         section="[Collector]",
                         level="info",
                         event="collector_no_response_during_standby",
+                        component="collector",
+                        inverter_name=inverter_name,
+                        state_path=str(collector_state_path),
+                        action="system_alert_skipped",
+                        error=str(e),
+                    )
+                    if collect_interval is None:
+                        break
+
+                    time.sleep(collect_interval)
+                    continue
+
+                if state is None and should_suppress_unknown_state_no_response(
+                    process_started_at,
+                    unknown_state_no_response_suppress_seconds,
+                ):
+                    log_event(
+                        section="[Collector]",
+                        level="info",
+                        event="collector_no_response_unknown_state",
                         component="collector",
                         inverter_name=inverter_name,
                         state_path=str(collector_state_path),
