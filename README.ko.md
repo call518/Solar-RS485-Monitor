@@ -190,11 +190,21 @@ uv venv .venv
 
 4. `/etc/solar-rs485-monitor.conf`에서 최소한 아래 값을 실제 환경에 맞게 수정합니다.
 
+생성되는 설정 템플릿은 dashboard, sink, alert, 운영 서비스 튜닝 옵션까지
+포함하기 때문에 일부러 자세합니다. SQLite 빠른 시작에서는 대부분 무시해도
+됩니다. 실제 인버터 통신을 위해 먼저 확인할 값은 보통 `SERIAL_PORT`,
+`INVERTER_PROTOCOL`, `INVERTER_ID` 정도입니다. 로그, SQLite 행, 대시보드,
+Telegram 메시지에서 인버터를 명확히 구분하려면 `INVERTER_NAME`도 실제
+이름으로 설정하세요.
+
 ```env
+# 인버터 통신과 식별에 필요한 핵심 값입니다.
 SERIAL_PORT="/dev/ttyUSB0"
 INVERTER_NAME="YOUR_INVERTER_NAME"
 INVERTER_PROTOCOL="inoelectric_iepvs_g1_g2"
 INVERTER_ID="1"
+
+# 빠른 시작에서 사용할 저장 경로와 서비스 경로입니다.
 SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
 PYTHON_VENV_PATH="/absolute/path/to/.venv"
 ```

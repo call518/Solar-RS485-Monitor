@@ -188,13 +188,23 @@ uv venv .venv
 ./.venv/bin/solar-rs485-monitor --print-config-template | sudo tee /etc/solar-rs485-monitor.conf >/dev/null
 ```
 
-4. Edit `/etc/solar-rs485-monitor.conf` and set at least these values:
+4. Edit `/etc/solar-rs485-monitor.conf` and set at least these values.
+
+The generated config template is intentionally comprehensive because it also
+contains dashboard, sink, alert, and production service tuning options. For the
+SQLite quickstart, you can ignore most of it. The inverter communication values
+you normally need to check first are `SERIAL_PORT`, `INVERTER_PROTOCOL`, and
+`INVERTER_ID`. Set `INVERTER_NAME` too so logs, SQLite rows, dashboard labels,
+and Telegram messages identify the inverter clearly.
 
 ```env
+# Required for inverter communication and identification.
 SERIAL_PORT="/dev/ttyUSB0"
 INVERTER_NAME="YOUR_INVERTER_NAME"
 INVERTER_PROTOCOL="inoelectric_iepvs_g1_g2"
 INVERTER_ID="1"
+
+# Storage/service paths for this quickstart.
 SQLITE_PATH="/tmp/solar-rs485-monitor.sqlite3"
 PYTHON_VENV_PATH="/absolute/path/to/.venv"
 ```
