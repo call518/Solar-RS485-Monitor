@@ -39,7 +39,7 @@ markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 more-itertools==11.1.0
-narwhals==2.23.0
+narwhals==2.24.0
 nh3==0.3.6
 nodeenv==1.10.0
 numpy==2.2.6
