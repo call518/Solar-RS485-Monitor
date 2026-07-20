@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import sys
 import time
+import warnings
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -56,6 +57,15 @@ DEFAULT_DASHBOARD_AUTH_COOKIE_PERSISTENT_USERS = "admin"
 DASHBOARD_AUTH_PERSISTENT_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60
 DASHBOARD_AUTH_CHALLENGE_TTL_SECONDS = 120
 CRYPTO_JS_ASSET_PATH = Path(__file__).resolve().parent / "assets" / "crypto-js-4.2.0.min.js"
+
+# Long-term, MariaDB dashboard reads should move to a SQLAlchemy engine because
+# that is the pandas-supported path. Keep the current PyMySQL DBAPI path for now
+# and filter only this known pandas compatibility warning to reduce syslog noise.
+warnings.filterwarnings(
+    "ignore",
+    message="pandas only supports SQLAlchemy connectable",
+    category=UserWarning,
+)
 
 METRICS = {
     "input_dc_voltage_v": "DC input voltage (V)",
