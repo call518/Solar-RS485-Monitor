@@ -30,6 +30,15 @@ ALERT_COOLDOWN_SECONDS="900"
 # [Alert][Optional] Send collector failure alerts after this many consecutive failures.
 COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 
+# [Collector][Optional] Persist the latest inverter state for alert decisions.
+COLLECTOR_STATE_PATH="/var/lib/solar-rs485-monitor/collector-state.json"
+
+# [Collector][Optional] Ignore collector state files older than this many seconds.
+COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
+
+# [Collector][Optional] Suppress No response system alerts while last state is standby.
+COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
+
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"

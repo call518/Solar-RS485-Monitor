@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -97,6 +98,70 @@ def test_log_event_writes_structured_json(capsys: pytest.CaptureFixture[str]) ->
     assert logged["component"] == "collector"
     assert logged["action"] == "continued"
     assert "@timestamp" in logged
+
+
+def test_collector_state_file_round_trip_and_standby_detection(tmp_path) -> None:
+    state_path = tmp_path / "collector-state.json"
+
+    collector.write_collector_state(state_path, {
+        "inverter_name": "Test Inverter",
+        "inverter_id": 1,
+        "fault_code": 1,
+    })
+
+    state = collector.read_collector_state(
+        state_path,
+        max_age_seconds=86400,
+        now=datetime.now(timezone.utc),
+    )
+
+    assert state is not None
+    assert state["fault_code"] == 1
+    assert state["operation_stopped"] is True
+    assert state["has_fault"] is False
+    assert collector.is_standby_state(state) is True
+
+
+def test_missing_collector_state_file_is_unknown_not_error(tmp_path) -> None:
+    state = collector.read_collector_state(
+        tmp_path / "missing-state.json",
+        max_age_seconds=86400,
+        now=datetime.now(timezone.utc),
+    )
+
+    assert state is None
+    assert collector.is_standby_state(state) is False
+
+
+def test_expired_collector_state_file_is_unknown(tmp_path) -> None:
+    state_path = tmp_path / "collector-state.json"
+    state_path.write_text(
+        json.dumps({
+            "updated_at": "2026-07-08T00:00:00+00:00",
+            "fault_code": 1,
+            "operation_stopped": True,
+            "has_fault": False,
+        }),
+        encoding="utf-8",
+    )
+
+    state = collector.read_collector_state(
+        state_path,
+        max_age_seconds=60,
+        now=datetime(2026, 7, 8, 0, 2, tzinfo=timezone.utc),
+    )
+
+    assert state is None
+
+
+def test_fault_state_does_not_count_as_standby() -> None:
+    state = {
+        "fault_code": 3,
+        "operation_stopped": True,
+        "has_fault": True,
+    }
+
+    assert collector.is_standby_state(state) is False
 
 
 def test_collect_once_retries_retryable_parse_error(monkeypatch) -> None:

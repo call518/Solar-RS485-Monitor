@@ -58,6 +58,12 @@ CONFIG_TEMPLATE_FILENAME = "solar-rs485-monitor.conf.template"
 MIN_COLLECT_INTERVAL_SECONDS = 60.0
 DEFAULT_ALERT_COOLDOWN_SECONDS = 900.0
 DEFAULT_COLLECTOR_FAILURE_ALERT_THRESHOLD = 3
+DEFAULT_COLLECTOR_STATE_PATH = (
+    "/var/lib/solar-rs485-monitor/collector-state.json"
+)
+DEFAULT_COLLECTOR_STATE_MAX_AGE_SECONDS = 86400.0
+FAULT_EVENT_MASK = 0xFFFE
+OPERATION_STOP_MASK = 0x0001
 SUPPORTED_COLLECTOR_SINKS = (
     "all",
     "google_sheet",
@@ -102,6 +108,13 @@ def env_float(name: str, default: str) -> float:
 
 def env_int(name: str, default: str) -> int:
     return int(os.getenv(name, default))
+
+
+def parse_int_value(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def parse_optional_interval(value: str) -> float | None:
@@ -290,6 +303,79 @@ def timestamp_fields() -> dict:
     return {
         "@timestamp": now_utc_iso(),
     }
+
+
+def parse_utc_datetime(value: str) -> datetime:
+    timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+
+    return timestamp.astimezone(timezone.utc)
+
+
+def build_collector_state(data: dict) -> dict:
+    fault_code = parse_int_value(data.get("fault_code"), 0)
+
+    return {
+        "updated_at": now_utc_iso(),
+        "inverter_name": data.get("inverter_name", ""),
+        "inverter_id": data.get("inverter_id"),
+        "fault_code": fault_code,
+        "operation_stopped": bool(fault_code & OPERATION_STOP_MASK),
+        "has_fault": bool(fault_code & FAULT_EVENT_MASK),
+    }
+
+
+def write_collector_state(state_path: Path, data: dict) -> None:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = state_path.with_name(f"{state_path.name}.tmp")
+    payload = json.dumps(
+        build_collector_state(data),
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    temp_path.write_text(payload + "\n", encoding="utf-8")
+    os.replace(temp_path, state_path)
+
+
+def read_collector_state(
+    state_path: Path,
+    max_age_seconds: float,
+    now: datetime | None = None,
+) -> dict | None:
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+    if not isinstance(state, dict):
+        return None
+
+    updated_at = state.get("updated_at")
+    if not isinstance(updated_at, str):
+        return None
+
+    current_time = now or datetime.now(timezone.utc)
+    age_seconds = (current_time - parse_utc_datetime(updated_at)).total_seconds()
+    if age_seconds < 0 or age_seconds > max_age_seconds:
+        return None
+
+    return state
+
+
+def is_no_response_error(error: Exception) -> bool:
+    return str(error).startswith("No response from inverter")
+
+
+def is_standby_state(state: dict | None) -> bool:
+    if state is None:
+        return False
+
+    return bool(state.get("operation_stopped")) and not bool(state.get("has_fault"))
 
 
 def print_json(data: dict) -> None:
@@ -785,6 +871,21 @@ def main() -> None:
             str(DEFAULT_COLLECTOR_FAILURE_ALERT_THRESHOLD),
         ),
     )
+    collector_state_path = Path(os.getenv(
+        "COLLECTOR_STATE_PATH",
+        DEFAULT_COLLECTOR_STATE_PATH,
+    )).expanduser()
+    collector_state_max_age_seconds = max(
+        0.0,
+        env_float(
+            "COLLECTOR_STATE_MAX_AGE_SECONDS",
+            str(DEFAULT_COLLECTOR_STATE_MAX_AGE_SECONDS),
+        ),
+    )
+    standby_no_response_suppress = env_bool(
+        "COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS",
+        "true",
+    )
 
     apply_sink_selection(args)
     apply_alert_selection(args)
@@ -921,6 +1022,17 @@ def main() -> None:
                 verify_crc=verify_crc,
                 read_retries=read_retries,
             )
+
+            try:
+                write_collector_state(collector_state_path, result)
+            except Exception as e:
+                warning_event(
+                    event="collector_state_write_failed",
+                    component="collector",
+                    state_path=str(collector_state_path),
+                    error=str(e),
+                    action="continued",
+                )
 
             if consecutive_collector_failures >= collector_failure_alert_threshold:
                 send_system_recovered_notification(
@@ -1105,6 +1217,28 @@ def main() -> None:
                     )
 
         except Exception as e:
+            if standby_no_response_suppress and is_no_response_error(e):
+                state = read_collector_state(
+                    collector_state_path,
+                    collector_state_max_age_seconds,
+                )
+                if is_standby_state(state):
+                    log_event(
+                        section="[Collector]",
+                        level="info",
+                        event="collector_no_response_during_standby",
+                        component="collector",
+                        inverter_name=inverter_name,
+                        state_path=str(collector_state_path),
+                        action="system_alert_skipped",
+                        error=str(e),
+                    )
+                    if collect_interval is None:
+                        break
+
+                    time.sleep(collect_interval)
+                    continue
+
             consecutive_collector_failures += 1
             failure_data = {
                 **timestamp_fields(),
