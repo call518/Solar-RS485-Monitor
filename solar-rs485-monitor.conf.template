@@ -39,6 +39,15 @@ COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 # [Collector][Optional] Suppress No response system alerts while last state is standby.
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
 
+# [Collector][Optional] Treat normal responses at or below this AC output
+# [Collector][Optional] power as standby when fault_code Bit 0 was not observed.
+COLLECTOR_STANDBY_POWER_W_THRESHOLD="20"
+
+# [Collector][Optional] Treat standby as normal again only at or above this AC
+# [Collector][Optional] output power. The 20W..30W band keeps the previous state
+# [Collector][Optional] to avoid repeated standby/normal flips around sunset/sunrise.
+COLLECTOR_NORMAL_POWER_W_THRESHOLD="30"
+
 # [Collector][Optional] Also suppress No response system alerts for this many
 # [Collector][Optional] seconds after startup when no collector state exists yet.
 COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"

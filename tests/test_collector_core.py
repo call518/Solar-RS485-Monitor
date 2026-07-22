@@ -182,6 +182,89 @@ def test_fault_state_does_not_count_as_standby() -> None:
     assert collector.is_standby_state(state) is False
 
 
+def test_low_output_power_derives_standby_when_bit_zero_not_seen() -> None:
+    result = collector.apply_operation_state(
+        data={"fault_code": 0, "output_ac_power_w": 12},
+        previous_operation_stopped=False,
+        standby_power_w_threshold=20,
+        normal_power_w_threshold=30,
+    )
+
+    assert result["operation_stopped"] is True
+    assert result["operation_state"] == "standby"
+    assert result["operation_state_reason"] == "low_output_power"
+
+
+def test_fault_code_bit_zero_overrides_power_fallback() -> None:
+    result = collector.apply_operation_state(
+        data={"fault_code": 1, "output_ac_power_w": 120},
+        previous_operation_stopped=False,
+        standby_power_w_threshold=20,
+        normal_power_w_threshold=30,
+    )
+
+    assert result["operation_stopped"] is True
+    assert result["operation_state_reason"] == "fault_code_bit_0"
+
+
+def test_hysteresis_band_keeps_previous_operation_state() -> None:
+    standby_result = collector.apply_operation_state(
+        data={"fault_code": 0, "output_ac_power_w": 25},
+        previous_operation_stopped=True,
+        standby_power_w_threshold=20,
+        normal_power_w_threshold=30,
+    )
+    normal_result = collector.apply_operation_state(
+        data={"fault_code": 0, "output_ac_power_w": 25},
+        previous_operation_stopped=False,
+        standby_power_w_threshold=20,
+        normal_power_w_threshold=30,
+    )
+
+    assert standby_result["operation_stopped"] is True
+    assert standby_result["operation_state_reason"] == "hysteresis_keep_standby"
+    assert normal_result["operation_stopped"] is False
+    assert normal_result["operation_state_reason"] == "hysteresis_keep_normal"
+
+
+def test_recovered_output_power_derives_normal() -> None:
+    result = collector.apply_operation_state(
+        data={"fault_code": 0, "output_ac_power_w": 35},
+        previous_operation_stopped=True,
+        standby_power_w_threshold=20,
+        normal_power_w_threshold=30,
+    )
+
+    assert result["operation_stopped"] is False
+    assert result["operation_state"] == "normal"
+    assert result["operation_state_reason"] == "output_power_recovered"
+
+
+def test_collector_state_uses_derived_operation_state(tmp_path) -> None:
+    state_path = tmp_path / "collector-state.json"
+
+    collector.write_collector_state(state_path, {
+        "inverter_name": "Test Inverter",
+        "inverter_id": 1,
+        "fault_code": 0,
+        "output_ac_power_w": 12,
+        "operation_stopped": True,
+        "operation_state": "standby",
+        "operation_state_reason": "low_output_power",
+    })
+
+    state = collector.read_collector_state(
+        state_path,
+        max_age_seconds=86400,
+        now=datetime.now(timezone.utc),
+    )
+
+    assert state is not None
+    assert state["operation_stopped"] is True
+    assert state["operation_state_reason"] == "low_output_power"
+    assert collector.is_standby_state(state) is True
+
+
 def test_collect_once_retries_retryable_parse_error(monkeypatch) -> None:
     reads = []
 

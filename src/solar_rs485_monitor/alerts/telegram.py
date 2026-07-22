@@ -163,19 +163,28 @@ def send_to_all_chat_ids(config: dict, text: str) -> dict:
 
 
 def build_operation_state_message(data: dict, fault_code: int, state: str) -> str:
-    bit_value = 1 if state == "STANDBY" else 0
-    title = "Standby" if state == "STANDBY" else "Normal"
-
-    return "\n".join(
-        [
-            f"*Solar RS485 {title} Event*",
-            f"Time: {format_code(data.get('@timestamp', '-'))}",
-            f"Inverter: {format_code(data.get('inverter_name', '-'))} "
-            f"(ID {format_code(data.get('inverter_id', '-'))})",
-            f"Fault code: {format_code(fault_code)}",
-            f"State: {format_code(f'{state} (Bit 0 = {bit_value})')}",
-        ]
+    expected_bit_value = 1 if state == "STANDBY" else 0
+    actual_bit_value = 1 if fault_code & OPERATION_STOP_MASK else 0
+    state_detail = (
+        f"{state} (Bit 0 = {actual_bit_value})"
+        if actual_bit_value == expected_bit_value
+        else f"{state} (derived)"
     )
+    title = "Standby" if state == "STANDBY" else "Normal"
+    lines = [
+        f"*Solar RS485 {title} Event*",
+        f"Time: {format_code(data.get('@timestamp', '-'))}",
+        f"Inverter: {format_code(data.get('inverter_name', '-'))} "
+        f"(ID {format_code(data.get('inverter_id', '-'))})",
+        f"Fault code: {format_code(fault_code)}",
+        f"State: {format_code(state_detail)}",
+    ]
+
+    reason = data.get("operation_state_reason")
+    if reason:
+        lines.append(f"Reason: {format_code(reason)}")
+
+    return "\n".join(lines)
 
 
 def write_to_telegram(data: dict, config: dict) -> dict:
@@ -186,7 +195,12 @@ def write_to_telegram(data: dict, config: dict) -> dict:
 
     fault_code = parse_int_value(data.get("fault_code"), 0)
     is_fault_event = (fault_code & FAULT_EVENT_MASK) != 0
-    is_operation_stopped = (fault_code & OPERATION_STOP_MASK) != 0
+    is_operation_stopped = bool(
+        data.get(
+            "operation_stopped",
+            (fault_code & OPERATION_STOP_MASK) != 0,
+        )
+    )
 
     standby_transition = False
     normal_transition = False

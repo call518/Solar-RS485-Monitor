@@ -63,6 +63,8 @@ DEFAULT_COLLECTOR_STATE_PATH = (
 )
 DEFAULT_COLLECTOR_STATE_MAX_AGE_SECONDS = 86400.0
 DEFAULT_COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS = 43200.0
+DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD = 20.0
+DEFAULT_COLLECTOR_NORMAL_POWER_W_THRESHOLD = 30.0
 FAULT_EVENT_MASK = 0xFFFE
 OPERATION_STOP_MASK = 0x0001
 SUPPORTED_COLLECTOR_SINKS = (
@@ -114,6 +116,13 @@ def env_int(name: str, default: str) -> int:
 def parse_int_value(value, default: int = 0) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_float_value(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -315,16 +324,101 @@ def parse_utc_datetime(value: str) -> datetime:
     return timestamp.astimezone(timezone.utc)
 
 
+def has_fault_event(fault_code: int) -> bool:
+    return bool(fault_code & FAULT_EVENT_MASK)
+
+
+def is_operation_stopped_by_fault_code(fault_code: int) -> bool:
+    return bool(fault_code & OPERATION_STOP_MASK)
+
+
+def derive_operation_state(
+    data: dict,
+    previous_operation_stopped: bool | None,
+    standby_power_w_threshold: float,
+    normal_power_w_threshold: float,
+) -> dict:
+    fault_code = parse_int_value(data.get("fault_code"), 0)
+    output_ac_power_w = parse_float_value(data.get("output_ac_power_w"), 0.0)
+
+    if has_fault_event(fault_code):
+        return {
+            "operation_stopped": is_operation_stopped_by_fault_code(fault_code),
+            "operation_state": "fault",
+            "operation_state_reason": "fault_code_bit_1_plus",
+        }
+
+    if is_operation_stopped_by_fault_code(fault_code):
+        return {
+            "operation_stopped": True,
+            "operation_state": "standby",
+            "operation_state_reason": "fault_code_bit_0",
+        }
+
+    if output_ac_power_w <= standby_power_w_threshold:
+        return {
+            "operation_stopped": True,
+            "operation_state": "standby",
+            "operation_state_reason": "low_output_power",
+        }
+
+    if output_ac_power_w >= normal_power_w_threshold:
+        return {
+            "operation_stopped": False,
+            "operation_state": "normal",
+            "operation_state_reason": "output_power_recovered",
+        }
+
+    if previous_operation_stopped is True:
+        return {
+            "operation_stopped": True,
+            "operation_state": "standby",
+            "operation_state_reason": "hysteresis_keep_standby",
+        }
+
+    return {
+        "operation_stopped": False,
+        "operation_state": "normal",
+        "operation_state_reason": "hysteresis_keep_normal",
+    }
+
+
+def apply_operation_state(
+    data: dict,
+    previous_operation_stopped: bool | None,
+    standby_power_w_threshold: float,
+    normal_power_w_threshold: float,
+) -> dict:
+    return {
+        **data,
+        **derive_operation_state(
+            data=data,
+            previous_operation_stopped=previous_operation_stopped,
+            standby_power_w_threshold=standby_power_w_threshold,
+            normal_power_w_threshold=normal_power_w_threshold,
+        ),
+    }
+
+
 def build_collector_state(data: dict) -> dict:
     fault_code = parse_int_value(data.get("fault_code"), 0)
+    operation_stopped = bool(
+        data.get(
+            "operation_stopped",
+            is_operation_stopped_by_fault_code(fault_code),
+        )
+    )
 
     return {
         "updated_at": now_utc_iso(),
         "inverter_name": data.get("inverter_name", ""),
         "inverter_id": data.get("inverter_id"),
         "fault_code": fault_code,
-        "operation_stopped": bool(fault_code & OPERATION_STOP_MASK),
-        "has_fault": bool(fault_code & FAULT_EVENT_MASK),
+        "operation_stopped": operation_stopped,
+        "operation_state": data.get("operation_state", ""),
+        "operation_state_reason": data.get("operation_state_reason", ""),
+        "output_ac_power_w": data.get("output_ac_power_w"),
+        "has_fault": has_fault_event(fault_code),
     }
 
 
@@ -901,6 +995,20 @@ def main() -> None:
         "COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS",
         "true",
     )
+    standby_power_w_threshold = max(
+        0.0,
+        env_float(
+            "COLLECTOR_STANDBY_POWER_W_THRESHOLD",
+            str(DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD),
+        ),
+    )
+    normal_power_w_threshold = max(
+        standby_power_w_threshold,
+        env_float(
+            "COLLECTOR_NORMAL_POWER_W_THRESHOLD",
+            str(DEFAULT_COLLECTOR_NORMAL_POWER_W_THRESHOLD),
+        ),
+    )
     unknown_state_no_response_suppress_seconds = max(
         0.0,
         env_float(
@@ -1027,6 +1135,15 @@ def main() -> None:
         )
 
     consecutive_collector_failures = 0
+    previous_state = read_collector_state(
+        collector_state_path,
+        collector_state_max_age_seconds,
+    )
+    previous_operation_stopped = (
+        bool(previous_state.get("operation_stopped"))
+        if previous_state is not None
+        else None
+    )
 
     while True:
         try:
@@ -1044,6 +1161,13 @@ def main() -> None:
                 verify_crc=verify_crc,
                 read_retries=read_retries,
             )
+            result = apply_operation_state(
+                data=result,
+                previous_operation_stopped=previous_operation_stopped,
+                standby_power_w_threshold=standby_power_w_threshold,
+                normal_power_w_threshold=normal_power_w_threshold,
+            )
+            previous_operation_stopped = bool(result["operation_stopped"])
 
             try:
                 write_collector_state(collector_state_path, result)
