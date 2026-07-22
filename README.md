@@ -179,7 +179,7 @@ uv venv .venv
 2. Install the package in that environment:
 
 ```bash
-./.venv/bin/pip install solar-rs485-monitor
+uv pip install --python .venv/bin/python solar-rs485-monitor
 ```
 
 3. Create the config file at `/etc/solar-rs485-monitor.conf`:
@@ -310,16 +310,26 @@ The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to det
 
 ## Setup
 
-Install from PyPI after the package is published:
+The recommended install path uses `uv`:
 
 ```bash
-pip install solar-rs485-monitor
+uv venv --python 3.10 .venv
+uv pip install --python .venv/bin/python solar-rs485-monitor
+```
+
+If `uv` is not available, standard `pip` also works. Runtime dependencies are included in the PyPI package metadata, so a separate `requirements.txt` file is not needed.
+
+```bash
+python -m venv .venv
+./.venv/bin/python -m pip install -U pip
+./.venv/bin/python -m pip install solar-rs485-monitor
 ```
 
 For local development with `uv` and the project `.venv`:
 
 ```bash
 uv venv --python 3.10 .venv
+uv sync
 uv pip install --python .venv/bin/python -e .
 ```
 

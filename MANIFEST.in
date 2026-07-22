@@ -2,7 +2,6 @@ include README.md
 include README.ko.md
 include LICENSE
 include solar-rs485-monitor.conf.template
-include requirements.txt
 recursive-include packaging *.service
 recursive-include src/solar_rs485_monitor *.template
 prune .github

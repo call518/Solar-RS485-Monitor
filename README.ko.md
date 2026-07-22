@@ -179,7 +179,7 @@ uv venv .venv
 2. 해당 가상환경에 패키지를 설치합니다.
 
 ```bash
-./.venv/bin/pip install solar-rs485-monitor
+uv pip install --python .venv/bin/python solar-rs485-monitor
 ```
 
 3. `/etc/solar-rs485-monitor.conf`에 설정 파일을 생성합니다.
@@ -308,16 +308,26 @@ ALERT_CHANNELS=""
 
 ## 설정
 
-패키지가 PyPI에 게시된 뒤에는 다음처럼 설치합니다.
+권장 설치 방법은 `uv`입니다.
 
 ```bash
-pip install solar-rs485-monitor
+uv venv --python 3.10 .venv
+uv pip install --python .venv/bin/python solar-rs485-monitor
+```
+
+`uv`가 없는 환경에서는 표준 `pip`로도 설치할 수 있습니다. PyPI 패키지 메타데이터에 런타임 의존성이 포함되어 있으므로 별도 `requirements.txt`는 필요하지 않습니다.
+
+```bash
+python -m venv .venv
+./.venv/bin/python -m pip install -U pip
+./.venv/bin/python -m pip install solar-rs485-monitor
 ```
 
 로컬 개발에서 `uv`와 프로젝트 `.venv`를 사용하는 경우:
 
 ```bash
 uv venv --python 3.10 .venv
+uv sync
 uv pip install --python .venv/bin/python -e .
 ```
 

@@ -38,6 +38,7 @@
 
 ## Validation
 - Prefer focused validation after changes:
+  - `uv sync`
   - `uv pip install --python .venv/bin/python -e .`
   - `.venv/bin/solar-rs485-monitor --help`
   - `uv build`
