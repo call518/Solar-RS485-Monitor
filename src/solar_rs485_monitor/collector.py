@@ -6,9 +6,10 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, time as datetime_time, timezone
 from importlib.resources import files
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -65,6 +66,9 @@ DEFAULT_COLLECTOR_STATE_MAX_AGE_SECONDS = 86400.0
 DEFAULT_COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS = 43200.0
 DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD = 20.0
 DEFAULT_COLLECTOR_NORMAL_POWER_W_THRESHOLD = 30.0
+DEFAULT_COLLECTOR_LOCAL_TIMEZONE = "Asia/Seoul"
+DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_START = "20:00"
+DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_END = "04:00"
 FAULT_EVENT_MASK = 0xFFFE
 OPERATION_STOP_MASK = 0x0001
 SUPPORTED_COLLECTOR_SINKS = (
@@ -125,6 +129,15 @@ def parse_float_value(value, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def parse_hhmm(value: str) -> datetime_time:
+    try:
+        parsed = datetime.strptime(value.strip(), "%H:%M")
+    except ValueError as e:
+        raise RuntimeError(f"Invalid HH:MM time value: {value}") from e
+
+    return datetime_time(hour=parsed.hour, minute=parsed.minute)
 
 
 def parse_optional_interval(value: str) -> float | None:
@@ -484,6 +497,55 @@ def should_suppress_unknown_state_no_response(
     current_time = now if now is not None else time.monotonic()
     elapsed = current_time - process_started_at
     return 0 <= elapsed < suppress_seconds
+
+
+def is_time_in_window(
+    current_time: datetime_time,
+    start_time: datetime_time,
+    end_time: datetime_time,
+) -> bool:
+    if start_time == end_time:
+        return True
+
+    if start_time < end_time:
+        return start_time <= current_time < end_time
+
+    return current_time >= start_time or current_time < end_time
+
+
+def should_suppress_night_no_response(
+    enabled: bool,
+    timezone_name: str,
+    start_time_text: str,
+    end_time_text: str,
+    now: datetime | None = None,
+) -> tuple[bool, dict]:
+    if not enabled:
+        return False, {}
+
+    try:
+        local_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as e:
+        raise RuntimeError(
+            f"Invalid COLLECTOR_LOCAL_TIMEZONE: {timezone_name}"
+        ) from e
+
+    start_time = parse_hhmm(start_time_text)
+    end_time = parse_hhmm(end_time_text)
+    current_datetime = now or datetime.now(timezone.utc)
+    local_datetime = current_datetime.astimezone(local_timezone)
+    suppressed = is_time_in_window(
+        current_time=local_datetime.time(),
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    return suppressed, {
+        "local_timezone": timezone_name,
+        "local_time": local_datetime.isoformat(),
+        "night_start": start_time_text,
+        "night_end": end_time_text,
+    }
 
 
 def print_json(data: dict) -> None:
@@ -1009,6 +1071,22 @@ def main() -> None:
             str(DEFAULT_COLLECTOR_NORMAL_POWER_W_THRESHOLD),
         ),
     )
+    night_no_response_suppress = env_bool(
+        "COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS",
+        "true",
+    )
+    collector_local_timezone = os.getenv(
+        "COLLECTOR_LOCAL_TIMEZONE",
+        DEFAULT_COLLECTOR_LOCAL_TIMEZONE,
+    ).strip()
+    night_no_response_start = os.getenv(
+        "COLLECTOR_NIGHT_NO_RESPONSE_START",
+        DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_START,
+    ).strip()
+    night_no_response_end = os.getenv(
+        "COLLECTOR_NIGHT_NO_RESPONSE_END",
+        DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_END,
+    ).strip()
     unknown_state_no_response_suppress_seconds = max(
         0.0,
         env_float(
@@ -1398,6 +1476,43 @@ def main() -> None:
                         state_path=str(collector_state_path),
                         action="system_alert_skipped",
                         error=str(e),
+                    )
+                    if collect_interval is None:
+                        break
+
+                    time.sleep(collect_interval)
+                    continue
+
+                try:
+                    suppress_night, night_context = (
+                        should_suppress_night_no_response(
+                            enabled=night_no_response_suppress,
+                            timezone_name=collector_local_timezone,
+                            start_time_text=night_no_response_start,
+                            end_time_text=night_no_response_end,
+                        )
+                    )
+                except RuntimeError as night_error:
+                    warning_event(
+                        event="collector_night_suppress_config_invalid",
+                        component="collector",
+                        error=str(night_error),
+                        action="night_suppress_disabled",
+                    )
+                    suppress_night = False
+                    night_context = {}
+
+                if suppress_night:
+                    log_event(
+                        section="[Collector]",
+                        level="info",
+                        event="collector_no_response_during_night",
+                        component="collector",
+                        inverter_name=inverter_name,
+                        state_path=str(collector_state_path),
+                        action="system_alert_skipped",
+                        error=str(e),
+                        **night_context,
                     )
                     if collect_interval is None:
                         break

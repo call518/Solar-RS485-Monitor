@@ -39,6 +39,16 @@ COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 # [Collector][Optional] Suppress No response system alerts while last state is standby.
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
 
+# [Collector][Optional] Local timezone for night-time No response alert mute.
+COLLECTOR_LOCAL_TIMEZONE="Asia/Seoul"
+
+# [Collector][Optional] Mute No response system alerts during a configured
+# [Collector][Optional] night window. This does not mark the inverter standby;
+# [Collector][Optional] it only skips system error alerts during the window.
+COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_NIGHT_NO_RESPONSE_START="20:00"
+COLLECTOR_NIGHT_NO_RESPONSE_END="04:00"
+
 # [Collector][Optional] Treat normal responses at or below this AC output
 # [Collector][Optional] power as standby when fault_code Bit 0 was not observed.
 COLLECTOR_STANDBY_POWER_W_THRESHOLD="20"

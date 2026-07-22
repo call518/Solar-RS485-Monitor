@@ -731,6 +731,10 @@ COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 COLLECTOR_STATE_PATH="/var/lib/solar-rs485-monitor/collector-state.json"
 COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_LOCAL_TIMEZONE="Asia/Seoul"
+COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_NIGHT_NO_RESPONSE_START="20:00"
+COLLECTOR_NIGHT_NO_RESPONSE_END="04:00"
 COLLECTOR_STANDBY_POWER_W_THRESHOLD="20"
 COLLECTOR_NORMAL_POWER_W_THRESHOLD="30"
 COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
@@ -747,6 +751,8 @@ COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 collector는 마지막 인버터 상태를 `COLLECTOR_STATE_PATH`에 기록합니다. `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"`이고 이 상태 파일이 장애 없는 standby/off 상태를 가리키면, `No response from inverter`는 예상 가능한 standby 동작으로 로그만 남기고 system error alert는 보내지 않습니다. 상태 파일이 삭제되었거나 없거나 손상되었거나 `COLLECTOR_STATE_MAX_AGE_SECONDS`보다 오래되면 상태를 알 수 없는 것으로 봅니다. 서비스 시작 후 `COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS`초 동안은 상태를 알 수 없는 `No response from inverter`도 system error alert 없이 로그만 남깁니다. 이 grace 기간이 지난 뒤에는 다음 정상 수집이 파일을 다시 만들 때까지 기존 연속 실패 threshold 정책을 사용합니다.
 
 standby 판정은 `fault_code` Bit 0을 가장 신뢰합니다. Bit 1+ 장애가 없고 Bit 0을 받지 못한 정상 응답에서는 보완책으로 AC 출력 전력을 봅니다. `output_ac_power_w <= COLLECTOR_STANDBY_POWER_W_THRESHOLD`이면 일몰 쪽 저출력 상태로 보고 standby로 전환합니다. 반대로 `output_ac_power_w >= COLLECTOR_NORMAL_POWER_W_THRESHOLD`이면 일출 쪽 출력 회복으로 보고 normal로 전환합니다. 두 값 사이, 예를 들어 기본값 기준 20W 초과 30W 미만 구간은 판단을 뒤집기 애매한 완충 구간이므로 이전 상태를 유지해 일몰/일출 경계에서 standby/normal 알림이 반복되는 것을 막습니다.
+
+야간 무응답 억제는 standby 판정과 별개의 알림 mute 정책입니다. `COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS="true"`이면 `COLLECTOR_LOCAL_TIMEZONE` 기준 현재 시간이 `COLLECTOR_NIGHT_NO_RESPONSE_START`부터 `COLLECTOR_NIGHT_NO_RESPONSE_END` 사이일 때 `No response from inverter` system error alert를 보내지 않고 로그만 남깁니다. 예를 들어 `20:00`부터 `04:00`처럼 자정을 넘는 구간도 지원합니다. 이 기능은 상태 파일을 standby로 바꾸지 않으므로, 설정한 야간 구간이 끝난 뒤에도 계속 무응답이면 기존 연속 실패 threshold와 cooldown 정책에 따라 system error alert가 다시 전송됩니다.
 
 Telegram은 기본적으로 인버터 대기/오프 전환과 정상 복귀 전환도 알립니다. 끄려면 `TELEGRAM_SEND_STANDBY_EVENT="false"`로 설정하세요. 이 옵션은 `fault_code` Bit 0 전환 또는 위 전력 기반 보완 판정으로 상태가 바뀌는 시점에만 1회 전송하도록 동작하므로, 야간 저전력 상태에서 같은 알림이 반복 전송되는 것을 방지합니다. 단, Bit 1+ 장애 비트가 켜져 있으면 정상/standby 이벤트보다 장애 이벤트로 처리합니다.
 

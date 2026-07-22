@@ -151,6 +151,55 @@ def test_unknown_state_no_response_suppress_respects_grace_period() -> None:
     ) is False
 
 
+def test_time_window_supports_cross_midnight_range() -> None:
+    start = collector.parse_hhmm("20:00")
+    end = collector.parse_hhmm("04:00")
+
+    assert collector.is_time_in_window(collector.parse_hhmm("21:30"), start, end)
+    assert collector.is_time_in_window(collector.parse_hhmm("03:59"), start, end)
+    assert not collector.is_time_in_window(collector.parse_hhmm("12:00"), start, end)
+    assert not collector.is_time_in_window(collector.parse_hhmm("04:00"), start, end)
+
+
+def test_night_no_response_suppress_uses_configured_timezone() -> None:
+    suppressed, context = collector.should_suppress_night_no_response(
+        enabled=True,
+        timezone_name="Asia/Seoul",
+        start_time_text="20:00",
+        end_time_text="04:00",
+        now=datetime(2026, 7, 22, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert suppressed is True
+    assert context["local_timezone"] == "Asia/Seoul"
+    assert context["night_start"] == "20:00"
+    assert context["night_end"] == "04:00"
+
+
+def test_night_no_response_suppress_is_false_outside_window() -> None:
+    suppressed, context = collector.should_suppress_night_no_response(
+        enabled=True,
+        timezone_name="Asia/Seoul",
+        start_time_text="20:00",
+        end_time_text="04:00",
+        now=datetime(2026, 7, 22, 6, 0, tzinfo=timezone.utc),
+    )
+
+    assert suppressed is False
+    assert context["local_timezone"] == "Asia/Seoul"
+
+
+def test_night_no_response_suppress_raises_for_invalid_timezone() -> None:
+    with pytest.raises(RuntimeError, match="Invalid COLLECTOR_LOCAL_TIMEZONE"):
+        collector.should_suppress_night_no_response(
+            enabled=True,
+            timezone_name="Invalid/Zone",
+            start_time_text="20:00",
+            end_time_text="04:00",
+            now=datetime(2026, 7, 22, 12, 30, tzinfo=timezone.utc),
+        )
+
+
 def test_expired_collector_state_file_is_unknown(tmp_path) -> None:
     state_path = tmp_path / "collector-state.json"
     state_path.write_text(

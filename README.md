@@ -732,6 +732,10 @@ COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
 COLLECTOR_STATE_PATH="/var/lib/solar-rs485-monitor/collector-state.json"
 COLLECTOR_STATE_MAX_AGE_SECONDS="86400"
 COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_LOCAL_TIMEZONE="Asia/Seoul"
+COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS="true"
+COLLECTOR_NIGHT_NO_RESPONSE_START="20:00"
+COLLECTOR_NIGHT_NO_RESPONSE_END="04:00"
 COLLECTOR_STANDBY_POWER_W_THRESHOLD="20"
 COLLECTOR_NORMAL_POWER_W_THRESHOLD="30"
 COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
@@ -748,6 +752,8 @@ When `TELEGRAM_SEND_SINK_ERROR="true"`, Telegram also sends a message when an en
 The collector writes the latest inverter state to `COLLECTOR_STATE_PATH`. When `COLLECTOR_STANDBY_NO_RESPONSE_SUPPRESS="true"` and that state says the inverter was in standby/off without a fault, `No response from inverter` is logged as expected standby behavior and does not trigger a system error alert. If the state file is deleted, missing, corrupt, or older than `COLLECTOR_STATE_MAX_AGE_SECONDS`, the collector treats the state as unknown. During the first `COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS` seconds after startup, unknown-state `No response from inverter` events are also logged without a system error alert. After that grace period, the normal failure threshold policy applies until the next successful collection recreates the file.
 
 Standby detection trusts `fault_code` Bit 0 first. When there is no Bit 1+ fault and Bit 0 was not observed in a normal response, the collector uses AC output power as a fallback. If `output_ac_power_w <= COLLECTOR_STANDBY_POWER_W_THRESHOLD`, the collector treats the low output as a sunset-side standby transition. If `output_ac_power_w >= COLLECTOR_NORMAL_POWER_W_THRESHOLD`, it treats the recovered output as a sunrise-side normal transition. The band between the two values, for example above 20W and below 30W with the defaults, keeps the previous state because the signal is too close to the boundary; this prevents repeated standby/normal flips around sunrise or sunset.
+
+Night-time no-response suppression is an alert mute policy, separate from standby detection. When `COLLECTOR_NIGHT_NO_RESPONSE_SUPPRESS="true"` and the current time in `COLLECTOR_LOCAL_TIMEZONE` falls between `COLLECTOR_NIGHT_NO_RESPONSE_START` and `COLLECTOR_NIGHT_NO_RESPONSE_END`, `No response from inverter` system error alerts are skipped and only logged. Windows that cross midnight, such as `20:00` to `04:00`, are supported. This does not rewrite the state file as standby, so if the inverter still has no response after the configured night window ends, the normal consecutive-failure threshold and cooldown policy will send system error alerts again.
 
 By default, Telegram notifies inverter standby/off and normal recovery transition events. Set `TELEGRAM_SEND_STANDBY_EVENT="false"` to disable them. This sends a message only when the state changes through `fault_code` Bit 0 or the power-based fallback above, so repeated low-power nighttime samples do not spam duplicate standby messages. If Bit 1+ fault bits are active, the sample is treated as a fault event before normal/standby events.
 
