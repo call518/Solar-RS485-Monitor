@@ -82,6 +82,7 @@ METRICS = {
 
 GENERATION_SNAPSHOT_METRICS = {
     "daily_generation_kwh": "Daily generation (kWh)",
+    "weekly_generation_kwh": "Weekly generation (kWh)",
     "monthly_generation_kwh": "Monthly generation (kWh)",
     "yearly_generation_kwh": "Yearly generation (kWh)",
 }
@@ -98,6 +99,7 @@ METRIC_LABELS = {
         "output_ac_frequency_hz": "AC 출력 주파수 (Hz)",
         "total_generation_kwh": "누적 발전량 (kWh)",
         "daily_generation_kwh": "일일 발전량 (kWh)",
+        "weekly_generation_kwh": "주간 발전량 (kWh)",
         "monthly_generation_kwh": "월간 발전량 (kWh)",
         "yearly_generation_kwh": "연간 발전량 (kWh)",
         "fault_code": "점검 코드",
@@ -1946,6 +1948,7 @@ def format_snapshot_value(metric_name: str, value) -> str:
     if metric_name in {
         "total_generation_kwh",
         "daily_generation_kwh",
+        "weekly_generation_kwh",
         "monthly_generation_kwh",
         "yearly_generation_kwh",
     }:
@@ -1971,6 +1974,7 @@ def render_latest_metric_board(
     metric_order = [
         "total_generation_kwh",
         "daily_generation_kwh",
+        "weekly_generation_kwh",
         "monthly_generation_kwh",
         "yearly_generation_kwh",
         "input_dc_power_w",
@@ -1994,7 +1998,10 @@ def render_latest_metric_board(
             else latest.get(metric_name)
         )
         value = format_snapshot_value(metric_name, raw_value)
-        if metric_name in {"total_generation_kwh", "daily_generation_kwh"}:
+        if metric_name in {
+            "total_generation_kwh",
+            "daily_generation_kwh",
+        }:
             color_label = "#1e40af"
             color_value = "#8B0000"
         else:
@@ -2894,6 +2901,11 @@ def build_generation_snapshot(
         display_timezone=display_timezone,
         period="month",
     )
+    weekly_df = aggregate_generation_by_period(
+        daily_df=daily_df,
+        display_timezone=display_timezone,
+        period="week",
+    )
     yearly_df = aggregate_generation_by_period(
         daily_df=daily_df,
         display_timezone=display_timezone,
@@ -2901,6 +2913,7 @@ def build_generation_snapshot(
     )
 
     current_day = snapshot_local.strftime("%Y-%m-%d")
+    current_week = get_week_label(snapshot_local.date())
     current_month = snapshot_local.strftime("%Y-%m")
     current_year = snapshot_local.strftime("%Y")
 
@@ -2921,6 +2934,10 @@ def build_generation_snapshot(
         str(row["label"]): float(row["value"])
         for _, row in monthly_df.iterrows()
     }
+    weekly_values = {
+        str(row["label"]): float(row["value"])
+        for _, row in weekly_df.iterrows()
+    }
     yearly_values = {
         str(row["label"]): float(row["value"])
         for _, row in yearly_df.iterrows()
@@ -2928,6 +2945,7 @@ def build_generation_snapshot(
 
     return {
         "daily_generation_kwh": daily_values.get(current_day, 0.0),
+        "weekly_generation_kwh": weekly_values.get(current_week, 0.0),
         "monthly_generation_kwh": monthly_values.get(current_month, 0.0),
         "yearly_generation_kwh": yearly_values.get(current_year, 0.0),
     }
