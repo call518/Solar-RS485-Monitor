@@ -81,10 +81,10 @@ METRICS = {
 }
 
 GENERATION_SNAPSHOT_METRICS = {
-    "daily_generation_kwh": "Daily generation (kWh)",
-    "weekly_generation_kwh": "Weekly generation (kWh)",
-    "monthly_generation_kwh": "Monthly generation (kWh)",
-    "yearly_generation_kwh": "Yearly generation (kWh)",
+    "daily_generation_kwh": "Today's generation (kWh)",
+    "weekly_generation_kwh": "This week's generation (kWh)",
+    "monthly_generation_kwh": "This month's generation (kWh)",
+    "yearly_generation_kwh": "This year's generation (kWh)",
 }
 
 METRIC_LABELS = {
@@ -98,10 +98,10 @@ METRIC_LABELS = {
         "output_ac_power_factor_pct": "AC 출력 역률 (%)",
         "output_ac_frequency_hz": "AC 출력 주파수 (Hz)",
         "total_generation_kwh": "누적 발전량 (kWh)",
-        "daily_generation_kwh": "일일 발전량 (kWh)",
-        "weekly_generation_kwh": "주간 발전량 (kWh)",
-        "monthly_generation_kwh": "월간 발전량 (kWh)",
-        "yearly_generation_kwh": "연간 발전량 (kWh)",
+        "daily_generation_kwh": "금일 발전량 (kWh)",
+        "weekly_generation_kwh": "금주 발전량 (kWh)",
+        "monthly_generation_kwh": "금월 발전량 (kWh)",
+        "yearly_generation_kwh": "금년 발전량 (kWh)",
         "fault_code": "점검 코드",
     },
     "en": {
