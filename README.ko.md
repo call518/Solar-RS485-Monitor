@@ -150,8 +150,9 @@ RS485/시리얼 통신으로 태양광 인버터 데이터를 수집하는 모�
 - 요청 프레임: 제품별 요청 프레임에 맞게 `INVERTER_REQUEST_HEX`를 설정합니다. 사용하는 환경이나 문서에서 이를 TCP header 또는 protocol header라고 부른다면, 해당 제품별 헤더/요청 바이트를 이 값에 포함해서 다룹니다.
 - 응답 검증: 제품 응답 형식에 맞게 `INVERTER_FRAME_LENGTH`, `INVERTER_DATA_LENGTH`, `INVERTER_CRC_ORDER`, `INVERTER_ID`를 설정합니다.
 - 응답 파싱: 제품이 다른 바이트 오프셋, 다른 단위, 다른 스케일링으로 필드를 반환한다면 `src/solar_rs485_monitor/protocols/` 아래에 제품별 protocol module을 추가하고 `INVERTER_PROTOCOL`로 선택합니다.
+- 점검 코드 설명: 제품마다 `fault_code` 비트 의미가 다를 수 있으므로, 새 protocol module의 `PROTOCOL` 객체에 `fault_bit_labels_ko`, `fault_operation_stop_bit`, `fault_event_bits`, `fault_all_bits`를 제품 매뉴얼 기준으로 등록합니다. 대시보드는 선택된 `INVERTER_PROTOCOL` profile의 이 metadata로 점검 코드 설명을 표시합니다.
 
-새 제품 protocol module을 작성할 때는 `src/solar_rs485_monitor/protocols/inoelectric_iepvs_g1_g2.py`를 기준 예제로 삼습니다. 제품별 `parse_frame()`에서 프레임 검증, CRC 검증, payload 오프셋 해석, 단위 스케일링을 처리하고, `PROTOCOL` 객체에 요청 프레임과 기본 응답 길이, CRC 순서를 등록합니다. 새 module을 추가한 뒤에는 `src/solar_rs485_monitor/protocols/base.py`의 registry와 `tests/test_protocols.py`의 샘플 프레임 테스트도 함께 갱신합니다.
+새 제품 protocol module을 작성할 때는 `src/solar_rs485_monitor/protocols/inoelectric_iepvs_g1_g2.py`를 기준 예제로 삼습니다. 제품별 `parse_frame()`에서 프레임 검증, CRC 검증, payload 오프셋 해석, 단위 스케일링을 처리하고, `PROTOCOL` 객체에 요청 프레임, 기본 응답 길이, CRC 순서, fault code metadata를 등록합니다. 새 module을 추가한 뒤에는 `src/solar_rs485_monitor/protocols/base.py`의 registry와 `tests/test_protocols.py`의 샘플 프레임 테스트도 함께 갱신합니다.
 
 시리얼/TCP 연결이 성공했다고 해서 다른 RS485 인버터가 동일한 데이터 구조를 제공한다고 가정하면 안 됩니다.
 
@@ -284,7 +285,7 @@ ALERT_CHANNELS=""
 
 `DASHBOARD_LANGUAGE`는 대시보드 시작 시 기본 UI 언어를 지정합니다. 대소문자를 구분하지 않으며 `English` 또는 `Korean` 값을 지원합니다. 로딩 이후에는 사이드바에서 사용자가 언어를 변경할 수 있습니다.
 
-상단 상태 배지는 `fault_code`의 Bit 0(인버터 동작유무)로 `대기(STANDBY)`를 판정합니다. 장애 판정은 Bit 1+를 기준으로 하며, Bit 1+ 중 하나라도 활성화되면 `장애`, 그렇지 않고 Bit 0이 `1`이면 `STANDBY`, Bit 0이 `0`이면 `정상`으로 표시합니다.
+상단 상태 배지는 선택된 `INVERTER_PROTOCOL` profile의 fault metadata를 사용해 `fault_code`를 해석합니다. 기본 InoElectric IEPVS profile은 Bit 0(인버터 동작유무)로 `대기(STANDBY)`를 판정하고, Bit 1+ 중 하나라도 활성화되면 `장애`, 그렇지 않고 Bit 0이 `1`이면 `STANDBY`, Bit 0이 `0`이면 `정상`으로 표시합니다.
 
 `DASHBOARD_AUTO_REFRESH_SECONDS`는 대시보드 사이드바의 자동 새로고침 기본 선택값을 지정합니다. 지원 값은 `0`, `60`, `120`, `300`, `600`이며, 안전을 위해 `1`~`59`를 설정하면 `60`으로 보정됩니다.
 
@@ -433,7 +434,7 @@ INVERTER_VERIFY_CRC="true"
 
 ### 프로토콜 처리 흐름
 
-collector는 선택된 `INVERTER_PROTOCOL` profile에서 기본 요청 프레임과 `parse_frame()` 함수를 가져옵니다. 한 번의 읽기는 다음 순서로 진행됩니다.
+collector는 선택된 `INVERTER_PROTOCOL` profile에서 기본 요청 프레임과 `parse_frame()` 함수를 가져옵니다. dashboard는 같은 profile의 fault metadata를 사용해 `fault_code` 설명을 표시합니다. 한 번의 읽기는 다음 순서로 진행됩니다.
 
 1. `INVERTER_REQUEST_HEX` 요청 프레임을 RS485 연결로 전송합니다.
 2. 설정된 `INVERTER_FRAME_LENGTH`만큼 응답 프레임을 수신합니다.
@@ -443,7 +444,7 @@ collector는 선택된 `INVERTER_PROTOCOL` profile에서 기본 요청 프레임
 6. 역률, 주파수, 누적 발전량처럼 스케일이 있는 값은 공통 출력 단위로 변환합니다.
 7. `inverter_name`, `inverter_id`, 계측값, `fault_code`, `raw_frame_hex`를 하나의 dict로 반환해 JSON 출력과 sink 저장에 사용합니다.
 
-새 제품을 추가할 때는 이 흐름을 유지하되 요청 프레임, 응답 command, payload 길이, 필드 오프셋, endian, 스케일, CRC 방식이 제품 매뉴얼과 일치하는지 먼저 확인합니다.
+새 제품을 추가할 때는 이 흐름을 유지하되 요청 프레임, 응답 command, payload 길이, 필드 오프셋, endian, 스케일, CRC 방식, `fault_code` 비트 의미가 제품 매뉴얼과 일치하는지 먼저 확인합니다.
 
 ### 요청 프레임
 
@@ -510,7 +511,7 @@ collector는 선택된 `INVERTER_PROTOCOL` profile에서 기본 요청 프레임
 
 ### fault_code 비트 해석
 
-`fault_code`는 2바이트 unsigned 비트마스크입니다. 한 번의 응답에서 1개 이상의 비트가 동시에 활성화될 수 있으므로 단일 enum 값으로 해석하면 안 됩니다.
+현재 기본 profile에서 `fault_code`는 2바이트 unsigned 비트마스크입니다. 한 번의 응답에서 1개 이상의 비트가 동시에 활성화될 수 있으므로 단일 enum 값으로 해석하면 안 됩니다. 대시보드의 점검 코드 설명은 DB에 저장된 문자열이 아니라 선택된 `INVERTER_PROTOCOL` profile의 `fault_bit_labels_ko` metadata로 계산됩니다.
 
 간단 규칙:
 
@@ -870,7 +871,15 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 ```
 
-MariaDB sink는 대상 테이블이 없으면 자동으로 생성하며, timestamp/inverter_id/fault_code 인덱스도 함께 생성합니다. 현재 sink 스키마에 정의된 파싱 메트릭만 insert하며, `raw_frame_hex`는 디버깅용 JSON 출력에는 포함되지만 MariaDB에는 저장하지 않습니다. 저장하려면 테이블과 sink를 함께 확장해야 합니다.
+MariaDB sink는 대상 테이블이 없으면 자동으로 생성하며, timestamp/inverter_id/fault_code 인덱스도 함께 생성합니다. MariaDB도 SQLite/Supabase와 동일하게 `raw_frame_hex`를 저장합니다. 기존 테이블을 사용 중이라면 아래 컬럼을 수동으로 추가해야 합니다.
+
+```sql
+ALTER TABLE inverter_log
+ADD COLUMN raw_frame_hex TEXT NULL
+AFTER fault_code;
+```
+
+CRC mismatch 같은 collector 가상 이벤트는 장비 `fault_code`를 침범하지 않도록 `fault_code=NULL`, 계측값 `NULL`, `raw_frame_hex='[V:1] ...'` 형태로 저장합니다. 정상 row의 `raw_frame_hex`는 기존처럼 prefix 없는 순수 hex 문자열입니다. 대시보드는 `raw_frame_hex`가 `[V:n]` prefix로 시작할 때만 가상 이벤트로 식별합니다. 현재 가상 이벤트 코드는 `1 = 수집기 CRC 오류`입니다.
 
 단, 선택한 데이터베이스 자체는 미리 존재해야 하며 최초 실행 시 테이블/인덱스 생성 권한이 필요합니다.
 
@@ -900,6 +909,7 @@ CREATE TABLE IF NOT EXISTS inverter_log (
     output_ac_frequency_hz     FLOAT(5,2) COMMENT 'AC output frequency (Hz)',
     total_generation_kwh FLOAT(10,3) COMMENT 'Total generation (kWh)',
     fault_code           SMALLINT UNSIGNED DEFAULT 0 COMMENT 'Fault code',
+    raw_frame_hex         TEXT NULL COMMENT 'Raw response frame or virtual event marker',
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'DB insert time',
     INDEX idx_timestamp (timestamp),
     INDEX idx_inverter_id (inverter_id),

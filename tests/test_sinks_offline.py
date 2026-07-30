@@ -70,8 +70,42 @@ def test_mariadb_build_row_converts_timestamp_to_utc_naive_datetime() -> None:
 
     assert row[0] == datetime(2026, 7, 7, 21, 0)
     assert row[1] == "Inoelectric IEPVS-3.5-G1"
-    assert row[-1] == 0
+    assert row[-2:] == [0, "7e 01 02"]
     assert len(row) == len(mariadb.INSERT_COLUMNS)
+
+
+def test_database_rows_accept_collector_crc_error_payload() -> None:
+    data = make_data()
+    data.update({
+        "input_dc_voltage_v": None,
+        "input_dc_current_a": None,
+        "input_dc_power_w": None,
+        "output_ac_voltage_v": None,
+        "output_ac_current_a": None,
+        "output_ac_power_w": None,
+        "output_ac_power_factor_pct": None,
+        "output_ac_frequency_hz": None,
+        "total_generation_kwh": None,
+        "fault_code": None,
+        "raw_frame_hex": "[V:1] 4f ab 7e 01",
+    })
+
+    sqlite_row = sqlite.build_row(data)
+    mariadb_row = mariadb.build_row(data)
+    supabase_row = supabase.build_row(data)
+
+    assert sqlite_row[-2:] == [
+        None,
+        "[V:1] 4f ab 7e 01",
+    ]
+    assert mariadb_row[-2:] == [
+        None,
+        "[V:1] 4f ab 7e 01",
+    ]
+    assert supabase_row[-2:] == [
+        None,
+        "[V:1] 4f ab 7e 01",
+    ]
 
 
 def test_supabase_build_row_preserves_timezone_aware_timestamp() -> None:

@@ -231,6 +231,25 @@ def test_fault_state_does_not_count_as_standby() -> None:
     assert collector.is_standby_state(state) is False
 
 
+def test_build_collector_crc_error_data_leaves_fault_code_null() -> None:
+    error = RuntimeError(
+        "CRC mismatch received=0x0000 calculated=0x3a55 "
+        "frame_len=33 raw_frame_hex=4f ab 7e 01"
+    )
+
+    data = collector.build_collector_crc_error_data(
+        inverter_name="Test Inverter",
+        inverter_id=1,
+        error=error,
+    )
+
+    assert data["inverter_name"] == "Test Inverter"
+    assert data["inverter_id"] == 1
+    assert data["fault_code"] is None
+    assert data["raw_frame_hex"] == "[V:1] 4f ab 7e 01"
+    assert data["total_generation_kwh"] is None
+
+
 def test_low_output_power_derives_standby_when_bit_zero_not_seen() -> None:
     result = collector.apply_operation_state(
         data={"fault_code": 0, "output_ac_power_w": 12},

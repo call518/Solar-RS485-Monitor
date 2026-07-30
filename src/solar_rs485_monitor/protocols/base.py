@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Callable
 
 
@@ -14,6 +15,14 @@ class InverterProtocol:
         [bytes, str, int, int, int, str, bool],
         dict,
     ]
+    fault_bit_labels_ko: dict[int, str] = field(default_factory=dict)
+    fault_operation_stop_bit: int = 0
+    fault_event_bits: tuple[int, ...] = field(
+        default_factory=lambda: tuple(range(1, 16))
+    )
+    fault_all_bits: tuple[int, ...] = field(
+        default_factory=lambda: tuple(range(0, 16))
+    )
 
 
 def get_protocol_aliases() -> dict[str, str]:

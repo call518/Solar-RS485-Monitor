@@ -14,6 +14,16 @@ def test_protocol_registry_resolves_default_profile_and_aliases() -> None:
     assert get_protocol("iepvs-g1-g2").name == "inoelectric_iepvs_g1_g2"
 
 
+def test_protocol_profile_contains_fault_metadata() -> None:
+    protocol = get_protocol("inoelectric_iepvs_g1_g2")
+
+    assert protocol.fault_operation_stop_bit == 0
+    assert protocol.fault_event_bits == tuple(range(1, 16))
+    assert protocol.fault_all_bits == tuple(range(0, 16))
+    assert protocol.fault_bit_labels_ko[0] == "인버터 미작동"
+    assert protocol.fault_bit_labels_ko[1] == "태양전지 과전압"
+
+
 def test_inoelectric_iepvs_g1_g2_parses_sample_frame() -> None:
     protocol = get_protocol("inoelectric_iepvs_g1_g2")
 

@@ -11,6 +11,22 @@
 
 from solar_rs485_monitor.protocols.base import InverterProtocol
 
+FAULT_BIT_LABELS_KO = {
+    0: "인버터 미작동",
+    1: "태양전지 과전압",
+    2: "태양전지 저전압",
+    3: "태양전지 과전류",
+    4: "인버터 IGBT 에러",
+    5: "인버터 과온",
+    6: "계통 과전압",
+    7: "계통 저전압",
+    8: "계통 과전류",
+    9: "계통 과주파수",
+    10: "계통 저주파수",
+    11: "단독운전(정전)",
+    12: "지락(누전)",
+}
+
 
 def u16(data: bytes, offset: int) -> int:
     """데이터 영역에서 2바이트 unsigned 정수를 big-endian으로 읽는다.
@@ -200,4 +216,9 @@ PROTOCOL = InverterProtocol(
     default_crc_order="LH",
     # 실제 응답 프레임을 dict로 변환하는 함수 참조다.
     parse_frame=parse_frame,
+    # fault_code 비트 의미는 제품별 매뉴얼에 종속된다.
+    fault_bit_labels_ko=FAULT_BIT_LABELS_KO,
+    fault_operation_stop_bit=0,
+    fault_event_bits=tuple(range(1, 16)),
+    fault_all_bits=tuple(range(0, 16)),
 )

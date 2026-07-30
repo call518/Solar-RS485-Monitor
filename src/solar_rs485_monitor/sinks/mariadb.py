@@ -17,6 +17,7 @@ INSERT_COLUMNS = [
     "output_ac_frequency_hz",
     "total_generation_kwh",
     "fault_code",
+    "raw_frame_hex",
 ]
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -85,6 +86,7 @@ def build_row(data: dict) -> list:
         "output_ac_frequency_hz": data["output_ac_frequency_hz"],
         "total_generation_kwh": data["total_generation_kwh"],
         "fault_code": data["fault_code"],
+        "raw_frame_hex": data.get("raw_frame_hex", ""),
     }
 
     return [values[column] for column in INSERT_COLUMNS]
@@ -109,6 +111,7 @@ def ensure_mariadb_table(connection, table: str) -> None:
             `output_ac_frequency_hz` FLOAT(5,2),
             `total_generation_kwh` FLOAT(10,3),
             `fault_code` SMALLINT UNSIGNED DEFAULT 0,
+            `raw_frame_hex` TEXT,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX `idx_{safe_table}_timestamp` (`timestamp`),
             INDEX `idx_{safe_table}_inverter_id` (`inverter_id`),

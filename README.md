@@ -150,8 +150,9 @@ The request frame, response frame length, data offsets, scaling rules, CRC order
 - Request frame: set `INVERTER_REQUEST_HEX` to the product-specific request frame. If your environment describes this as a TCP header or protocol header, treat that product-specific header/request bytes as part of this value.
 - Response validation: set `INVERTER_FRAME_LENGTH`, `INVERTER_DATA_LENGTH`, `INVERTER_CRC_ORDER`, and `INVERTER_ID` according to the product's response format.
 - Response parsing: add a product-specific protocol module under `src/solar_rs485_monitor/protocols/` and select it with `INVERTER_PROTOCOL` if the product returns fields at different byte offsets, uses different units, or uses different scaling.
+- Fault code labels: different products can assign different meanings to `fault_code` bits. Register `fault_bit_labels_ko`, `fault_operation_stop_bit`, `fault_event_bits`, and `fault_all_bits` in the new module's `PROTOCOL` object according to the product manual. The dashboard uses this metadata from the selected `INVERTER_PROTOCOL` profile when rendering fault-code details.
 
-When adding a new product-specific protocol module, use `src/solar_rs485_monitor/protocols/inoelectric_iepvs_g1_g2.py` as the reference example. The product's `parse_frame()` should validate the frame, verify CRC when enabled, decode payload offsets, and apply unit scaling. The module's `PROTOCOL` object should register the request frame, default response lengths, and CRC byte order. After adding a module, update the registry in `src/solar_rs485_monitor/protocols/base.py` and add a sample-frame test in `tests/test_protocols.py`.
+When adding a new product-specific protocol module, use `src/solar_rs485_monitor/protocols/inoelectric_iepvs_g1_g2.py` as the reference example. The product's `parse_frame()` should validate the frame, verify CRC when enabled, decode payload offsets, and apply unit scaling. The module's `PROTOCOL` object should register the request frame, default response lengths, CRC byte order, and fault-code metadata. After adding a module, update the registry in `src/solar_rs485_monitor/protocols/base.py` and add a sample-frame test in `tests/test_protocols.py`.
 
 Do not assume another RS485 inverter will expose the same data layout just because the serial/TCP connection succeeds.
 
@@ -286,7 +287,7 @@ ALERT_CHANNELS=""
 
 `DASHBOARD_LANGUAGE` sets the default dashboard UI language at startup. It is case-insensitive and accepts `English` or `Korean`. Users can still change language from the sidebar after loading.
 
-The top status badge uses Bit 0 in `fault_code` (inverter operation flag) to determine `STANDBY`. Fault detection is based on Bit 1+; if any Bit 1+ is active, the badge shows `FAULT`. Otherwise, it shows `STANDBY` when Bit 0 is `1`, and `NORMAL` when Bit 0 is `0`.
+The top status badge interprets `fault_code` using the fault metadata from the selected `INVERTER_PROTOCOL` profile. The default InoElectric IEPVS profile uses Bit 0 as the inverter operation flag for `STANDBY`; if any Bit 1+ fault bit is active, the badge shows `FAULT`. Otherwise, it shows `STANDBY` when Bit 0 is `1`, and `NORMAL` when Bit 0 is `0`.
 
 `DASHBOARD_AUTO_REFRESH_SECONDS` sets the default auto-refresh option selected in the dashboard sidebar. Supported values are `0`, `60`, `120`, `300`, and `600`. A value between `1` and `59` is clamped to `60` for safety.
 
@@ -435,7 +436,7 @@ Other inverter models can use different request commands, response lengths, data
 
 ### Protocol Processing Flow
 
-The collector loads the default request frame and `parse_frame()` function from the selected `INVERTER_PROTOCOL` profile. One read cycle follows this flow:
+The collector loads the default request frame and `parse_frame()` function from the selected `INVERTER_PROTOCOL` profile. The dashboard uses the same profile's fault metadata when rendering `fault_code` details. One read cycle follows this flow:
 
 1. Send the `INVERTER_REQUEST_HEX` request frame over the RS485 connection.
 2. Read the response frame up to `INVERTER_FRAME_LENGTH`.
@@ -445,7 +446,7 @@ The collector loads the default request frame and `parse_frame()` function from 
 6. Convert scaled values such as power factor, frequency, and total generation into the common output units.
 7. Return one dict containing `inverter_name`, `inverter_id`, metrics, `fault_code`, and `raw_frame_hex` for JSON output and sink storage.
 
-When adding another product, keep this flow but verify the request frame, response command, payload length, field offsets, endian order, scaling rules, and CRC behavior against that product's manual.
+When adding another product, keep this flow but verify the request frame, response command, payload length, field offsets, endian order, scaling rules, CRC behavior, and `fault_code` bit meanings against that product's manual.
 
 ### Request Frame
 
@@ -512,7 +513,7 @@ The official manual defines the response data in the following 26-byte payload o
 
 ### fault_code Bit Interpretation
 
-`fault_code` is a 2-byte unsigned bitmask. One response can contain more than one active bit at the same time, so do not interpret it as a single enum value.
+In the default profile, `fault_code` is a 2-byte unsigned bitmask. One response can contain more than one active bit at the same time, so do not interpret it as a single enum value. Dashboard fault-code details are not stored as DB strings; they are derived from the selected `INVERTER_PROTOCOL` profile's `fault_bit_labels_ko` metadata.
 
 Simple rules:
 
@@ -871,7 +872,15 @@ MARIADB_TABLE="inverter_log"
 MARIADB_CONNECT_TIMEOUT="5.0"
 ```
 
-The MariaDB sink now creates the target table automatically when it does not exist, including timestamp, inverter_id, and fault_code indexes. It inserts only the parsed metric fields defined by the current sink schema; `raw_frame_hex` is printed in JSON for debugging but is not stored in MariaDB unless the table and sink are extended.
+The MariaDB sink creates the target table automatically when it does not exist, including timestamp, inverter_id, and fault_code indexes. MariaDB now stores `raw_frame_hex` consistently with SQLite and Supabase. If you already have an existing table, add the column manually:
+
+```sql
+ALTER TABLE inverter_log
+ADD COLUMN raw_frame_hex TEXT NULL
+AFTER fault_code;
+```
+
+Collector virtual events such as CRC mismatch do not reuse inverter `fault_code` values. They are stored with `fault_code=NULL`, metric columns set to `NULL`, and `raw_frame_hex='[V:1] ...'`. Normal rows keep the existing pure-hex `raw_frame_hex` format without a prefix. The dashboard treats a row as a virtual event only when `raw_frame_hex` starts with a `[V:n]` prefix. The current virtual event code is `1 = collector CRC mismatch`.
 
 The selected database must already exist and the logging user needs permissions to create tables and indexes on first run.
 
@@ -901,6 +910,7 @@ CREATE TABLE IF NOT EXISTS inverter_log (
     output_ac_frequency_hz     FLOAT(5,2) COMMENT 'AC output frequency (Hz)',
     total_generation_kwh FLOAT(10,3) COMMENT 'Total generation (kWh)',
     fault_code           SMALLINT UNSIGNED DEFAULT 0 COMMENT 'Fault code',
+    raw_frame_hex         TEXT NULL COMMENT 'Raw response frame or virtual event marker',
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'DB insert time',
     INDEX idx_timestamp (timestamp),
     INDEX idx_inverter_id (inverter_id),

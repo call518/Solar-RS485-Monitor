@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
+from solar_rs485_monitor.protocols import get_protocol
 from solar_rs485_monitor.sinks.mariadb import (
     get_mariadb_config,
     require_identifier as require_mariadb_identifier,
@@ -367,27 +368,11 @@ MAX_AGGREGATE_METRICS = {
     "fault_code",
 }
 
-FAULT_OPERATION_STOP_BIT = 0
-FAULT_EVENT_MASK = 0xFFFE
-
-FAULT_BIT_LABELS_KO = {
-    0: "인버터 미작동",
-    1: "태양전지 과전압",
-    2: "태양전지 저전압",
-    3: "태양전지 과전류",
-    4: "인버터 IGBT 에러",
-    5: "인버터 과온",
-    6: "계통 과전압",
-    7: "계통 저전압",
-    8: "계통 과전류",
-    9: "계통 과주파수",
-    10: "계통 저주파수",
-    11: "단독운전(정전)",
-    12: "지락(누전)",
+COLLECTOR_VIRTUAL_EVENT_LABELS_KO = {
+    1: "수집기 CRC 오류",
 }
-
-FAULT_EVENT_BITS = tuple(bit for bit in range(1, 16))
-FAULT_ALL_BITS = tuple(bit for bit in range(0, 16))
+VIRTUAL_EVENT_PREFIX = "[V:"
+VIRTUAL_EVENT_RE = re.compile(r"^\[V:(\d+)\]")
 
 
 def get_config_path() -> Path | None:
@@ -583,25 +568,46 @@ def get_chart_color(chart_name: str, fallback: str) -> str:
     return normalize_chart_color(raw, fallback)
 
 
+def get_dashboard_protocol():
+    return get_protocol(os.getenv("INVERTER_PROTOCOL", "inoelectric_iepvs_g1_g2"))
+
+
+def get_fault_bit_labels_ko() -> dict[int, str]:
+    return dict(get_dashboard_protocol().fault_bit_labels_ko)
+
+
+def get_fault_operation_stop_bit() -> int:
+    return get_dashboard_protocol().fault_operation_stop_bit
+
+
+def get_fault_event_bits() -> tuple[int, ...]:
+    return get_dashboard_protocol().fault_event_bits
+
+
+def get_fault_all_bits() -> tuple[int, ...]:
+    return get_dashboard_protocol().fault_all_bits
+
+
 def is_operation_stopped(fault_code: int) -> bool:
-    return bool(fault_code & (1 << FAULT_OPERATION_STOP_BIT))
+    return bool(fault_code & (1 << get_fault_operation_stop_bit()))
 
 
 def has_fault_condition(fault_code: int) -> bool:
-    return bool(fault_code & FAULT_EVENT_MASK)
+    return any(fault_code & (1 << bit) for bit in get_fault_event_bits())
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
     if fault_code <= 0:
         return None
 
+    fault_bit_labels = get_fault_bit_labels_ko()
     labels = []
 
-    for bit in range(16):
+    for bit in get_fault_all_bits():
         if not (fault_code & (1 << bit)):
             continue
 
-        label = FAULT_BIT_LABELS_KO.get(bit)
+        label = fault_bit_labels.get(bit)
         if label:
             labels.append(label)
 
@@ -612,13 +618,14 @@ def get_fault_code_label(fault_code: int) -> str | None:
 
 
 def get_fault_labels(fault_code: int, bits: tuple[int, ...]) -> str | None:
+    fault_bit_labels = get_fault_bit_labels_ko()
     labels = []
 
     for bit in bits:
         if not (fault_code & (1 << bit)):
             continue
 
-        label = FAULT_BIT_LABELS_KO.get(bit)
+        label = fault_bit_labels.get(bit)
         if label:
             labels.append(label)
 
@@ -629,13 +636,14 @@ def get_fault_labels(fault_code: int, bits: tuple[int, ...]) -> str | None:
 
 
 def get_fault_event_rows(fault_code: int, bits: tuple[int, ...]) -> list[str]:
+    fault_bit_labels = get_fault_bit_labels_ko()
     rows = []
 
     for bit in bits:
         if not (fault_code & (1 << bit)):
             continue
 
-        label = FAULT_BIT_LABELS_KO.get(bit, f"알 수 없는 비트 {bit}")
+        label = fault_bit_labels.get(bit, f"알 수 없는 비트 {bit}")
 
         mask_value = 1 << bit
         rows.append(
@@ -649,8 +657,93 @@ def format_active_bits(fault_code: int) -> str:
     if fault_code <= 0:
         return "-"
 
-    bits = [f"Bit {bit}" for bit in range(16) if fault_code & (1 << bit)]
+    bits = [
+        f"Bit {bit}"
+        for bit in get_fault_all_bits()
+        if fault_code & (1 << bit)
+    ]
     return ", ".join(bits) if bits else "-"
+
+
+def get_virtual_event_label(value) -> str | None:
+    if value is None:
+        return None
+
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+    except (ImportError, TypeError, ValueError):
+        pass
+
+    try:
+        event = int(value)
+    except (TypeError, ValueError):
+        event = str(value)
+
+    return COLLECTOR_VIRTUAL_EVENT_LABELS_KO.get(event, event)
+
+
+def extract_virtual_event(raw_frame_hex) -> str | None:
+    if raw_frame_hex is None:
+        return None
+
+    try:
+        import pandas as pd
+
+        if pd.isna(raw_frame_hex):
+            return None
+    except (ImportError, TypeError, ValueError):
+        pass
+
+    match = VIRTUAL_EVENT_RE.match(str(raw_frame_hex))
+    if match is None:
+        return None
+
+    return int(match.group(1))
+
+
+def format_fault_event_code(value, virtual_event) -> str:
+    if get_virtual_event_label(virtual_event):
+        return "-"
+
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return "-"
+    except (ImportError, TypeError, ValueError):
+        if value is None:
+            return "-"
+
+    try:
+        return str(int(float(value)))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def format_fault_event_active_bits(value, virtual_event) -> str:
+    if get_virtual_event_label(virtual_event):
+        return "가상이벤트"
+
+    try:
+        return format_active_bits(int(float(value)))
+    except (TypeError, ValueError):
+        return "-"
+
+
+def format_fault_event_label(value, virtual_event) -> str:
+    virtual_label = get_virtual_event_label(virtual_event)
+    if virtual_label:
+        return f"가상이벤트: {virtual_label}"
+
+    try:
+        fault_code = int(float(value))
+    except (TypeError, ValueError):
+        return "-"
+
+    return get_fault_code_label(fault_code) or f"FAULT CODE {fault_code}"
 
 
 def is_dashboard_auth_enabled() -> bool:
@@ -1676,11 +1769,13 @@ def read_sqlite_fault_events(
 ):
     import pandas as pd
 
+    virtual_event_condition = build_virtual_event_condition('"', "?")
     sql = (
-        "SELECT timestamp, inverter_name, inverter_id, fault_code "
+        "SELECT timestamp, inverter_name, inverter_id, fault_code, raw_frame_hex "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
-        "AND CAST(\"fault_code\" AS INTEGER) != 0 "
+        "AND (CAST(\"fault_code\" AS INTEGER) != 0 OR "
+        f"({virtual_event_condition})) "
         "ORDER BY timestamp DESC LIMIT ?"
     )
 
@@ -1688,7 +1783,12 @@ def read_sqlite_fault_events(
         df = pd.read_sql_query(
             sql,
             connection,
-            params=[since.isoformat(), until.isoformat(), limit],
+            params=[
+                since.isoformat(),
+                until.isoformat(),
+                get_virtual_event_like_pattern(),
+                limit,
+            ],
         )
 
     return normalize_dataframe(df)
@@ -1704,11 +1804,14 @@ def read_mariadb_fault_events(
     import pandas as pd
     import pymysql
 
+    virtual_event_condition = build_virtual_event_condition("`", "%s")
     sql = (
-        "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code` "
+        "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code`, "
+        "`raw_frame_hex` "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
-        "AND CAST(`fault_code` AS SIGNED) != 0 "
+        "AND (CAST(`fault_code` AS SIGNED) != 0 OR "
+        f"({virtual_event_condition})) "
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
 
@@ -1728,7 +1831,7 @@ def read_mariadb_fault_events(
         df = pd.read_sql_query(
             sql,
             connection,
-            params=[since, until, limit],
+            params=[since, until, get_virtual_event_like_pattern(), limit],
         )
 
     return normalize_dataframe(df)
@@ -2495,6 +2598,17 @@ def validate_bucket_seconds(bucket_seconds: int) -> int:
     return bucket_seconds
 
 
+def build_virtual_event_condition(quote: str, placeholder: str) -> str:
+    return (
+        f"{quote}fault_code{quote} IS NULL "
+        f"AND {quote}raw_frame_hex{quote} LIKE {placeholder}"
+    )
+
+
+def get_virtual_event_like_pattern() -> str:
+    return f"{VIRTUAL_EVENT_PREFIX}%"
+
+
 def read_sqlite_data(
     since: datetime,
     until: datetime,
@@ -2521,6 +2635,7 @@ def read_sqlite_data(
         f"{metric_selects} "
         f'FROM "{table}" '
         "WHERE timestamp >= ? AND timestamp <= ? "
+        "AND \"total_generation_kwh\" IS NOT NULL "
         "GROUP BY (CAST(strftime('%s', timestamp) AS INTEGER) / ?) "
         "ORDER BY timestamp DESC LIMIT ?"
     )
@@ -2566,6 +2681,7 @@ def read_mariadb_data(
         f"{metric_selects} "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "AND `total_generation_kwh` IS NOT NULL "
         "GROUP BY FLOOR(UNIX_TIMESTAMP(`timestamp`) / %s) "
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
@@ -2652,6 +2768,7 @@ def read_mariadb_latest_status_sample(
         "CAST(`fault_code` AS SIGNED) AS `fault_code` "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "AND `total_generation_kwh` IS NOT NULL "
         "ORDER BY `timestamp` DESC LIMIT 1"
     )
 
@@ -2690,6 +2807,7 @@ def read_sqlite_latest_status_sample(
         "CAST(\"fault_code\" AS INTEGER) AS fault_code "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
+        "AND \"total_generation_kwh\" IS NOT NULL "
         "ORDER BY timestamp DESC LIMIT 1"
     )
 
@@ -2697,7 +2815,10 @@ def read_sqlite_latest_status_sample(
         df = pd.read_sql_query(
             sql,
             connection,
-            params=[since.isoformat(), until.isoformat()],
+            params=[
+                since.isoformat(),
+                until.isoformat(),
+            ],
         )
 
     return normalize_dataframe(df)
@@ -2761,6 +2882,7 @@ def read_mariadb_daily_generation(
         ") AS daily_generation_kwh "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "AND `total_generation_kwh` IS NOT NULL "
         "GROUP BY day_local "
         "ORDER BY day_local ASC"
     )
@@ -2823,6 +2945,7 @@ def read_sqlite_daily_generation(
         "MAX(CAST(\"total_generation_kwh\" AS REAL))) AS daily_generation_kwh "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
+        "AND \"total_generation_kwh\" IS NOT NULL "
         "GROUP BY day_local "
         "ORDER BY day_local ASC"
     )
@@ -2980,23 +3103,38 @@ def render_fault_events_table(
     lang: str,
     display_timezone: ZoneInfo,
 ) -> None:
-    import pandas as pd
-
     if fault_events_df.empty:
         st.caption(text["fault_events_empty"])
         return
 
     display_df = fault_events_df.copy()
     display_df = display_df.sort_values("timestamp", ascending=False).head(200)
-    display_df["fault_code"] = pd.to_numeric(
-        display_df["fault_code"],
-        errors="coerce",
-    ).fillna(0).astype(int)
-    display_df[text["active_bits"]] = display_df["fault_code"].map(
-        lambda code: format_active_bits(int(code))
+    if "raw_frame_hex" not in display_df.columns:
+        display_df["raw_frame_hex"] = None
+    display_df["virtual_event"] = display_df["raw_frame_hex"].map(
+        extract_virtual_event
     )
-    display_df[text["fault_code_label"]] = display_df["fault_code"].map(
-        lambda code: get_fault_code_label(int(code)) or f"FAULT CODE {int(code)}"
+
+    display_df[text["active_bits"]] = display_df.apply(
+        lambda row: format_fault_event_active_bits(
+            row["fault_code"],
+            row["virtual_event"],
+        ),
+        axis=1,
+    )
+    display_df[text["fault_code_label"]] = display_df.apply(
+        lambda row: format_fault_event_label(
+            row["fault_code"],
+            row["virtual_event"],
+        ),
+        axis=1,
+    )
+    display_df["fault_code"] = display_df.apply(
+        lambda row: format_fault_event_code(
+            row["fault_code"],
+            row["virtual_event"],
+        ),
+        axis=1,
     )
 
     columns = [
@@ -3430,11 +3568,11 @@ def render_dashboard_body(
 
     fault_badge_text = fault_label
 
-    operation_label = FAULT_BIT_LABELS_KO.get(FAULT_OPERATION_STOP_BIT)
-    fault_event_labels = get_fault_labels(fault_code, FAULT_EVENT_BITS)
+    operation_label = get_fault_bit_labels_ko().get(get_fault_operation_stop_bit())
+    fault_event_labels = get_fault_labels(fault_code, get_fault_event_bits())
 
     if fault_code != 0:
-        detail_rows = get_fault_event_rows(fault_code, FAULT_ALL_BITS)
+        detail_rows = get_fault_event_rows(fault_code, get_fault_all_bits())
         if detail_rows:
             detail_text = "\n".join(detail_rows)
         else:

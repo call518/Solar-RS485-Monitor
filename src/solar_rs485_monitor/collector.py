@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -71,6 +72,10 @@ DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_START = "20:00"
 DEFAULT_COLLECTOR_NIGHT_NO_RESPONSE_END = "04:00"
 FAULT_EVENT_MASK = 0xFFFE
 OPERATION_STOP_MASK = 0x0001
+COLLECTOR_CRC_ERROR_FAULT_CODE = None
+COLLECTOR_CRC_MISMATCH_EVENT_CODE = 1
+VIRTUAL_EVENT_PREFIX = "[V:"
+RAW_FRAME_HEX_RE = re.compile(r"raw_frame_hex=([0-9a-fA-F ]+)")
 SUPPORTED_COLLECTOR_SINKS = (
     "all",
     "google_sheet",
@@ -477,6 +482,52 @@ def read_collector_state(
 
 def is_no_response_error(error: Exception) -> bool:
     return str(error).startswith("No response from inverter")
+
+
+def is_crc_mismatch_error(error: Exception) -> bool:
+    return str(error).startswith("CRC mismatch")
+
+
+def extract_raw_frame_hex(error: Exception) -> str:
+    match = RAW_FRAME_HEX_RE.search(str(error))
+    if match is None:
+        return ""
+
+    return " ".join(match.group(1).split())
+
+
+def format_virtual_event_raw_frame(event_code: int, raw_frame_hex: str) -> str:
+    prefix = f"{VIRTUAL_EVENT_PREFIX}{event_code}]"
+    if raw_frame_hex:
+        return f"{prefix} {raw_frame_hex}"
+
+    return prefix
+
+
+def build_collector_crc_error_data(
+    inverter_name: str,
+    inverter_id: int,
+    error: Exception,
+) -> dict:
+    return {
+        **timestamp_fields(),
+        "inverter_name": inverter_name,
+        "inverter_id": inverter_id,
+        "input_dc_voltage_v": None,
+        "input_dc_current_a": None,
+        "input_dc_power_w": None,
+        "output_ac_voltage_v": None,
+        "output_ac_current_a": None,
+        "output_ac_power_w": None,
+        "output_ac_power_factor_pct": None,
+        "output_ac_frequency_hz": None,
+        "total_generation_kwh": None,
+        "fault_code": COLLECTOR_CRC_ERROR_FAULT_CODE,
+        "raw_frame_hex": format_virtual_event_raw_frame(
+            COLLECTOR_CRC_MISMATCH_EVENT_CODE,
+            extract_raw_frame_hex(error),
+        ),
+    }
 
 
 def is_standby_state(state: dict | None) -> bool:
@@ -1546,6 +1597,52 @@ def main() -> None:
                     alert_state=alert_state,
                     failures=consecutive_collector_failures,
                 )
+
+            if is_crc_mismatch_error(e):
+                crc_error_data = build_collector_crc_error_data(
+                    inverter_name=inverter_name,
+                    inverter_id=inverter_id,
+                    error=e,
+                )
+
+                if mariadb_config is not None:
+                    try:
+                        write_to_mariadb(crc_error_data, mariadb_config)
+                    except Exception as sink_error:
+                        handle_sink_error(
+                            inverter_name=inverter_name,
+                            alert_configs=alert_configs,
+                            data=crc_error_data,
+                            sink="mariadb",
+                            error=sink_error,
+                            alert_state=alert_state,
+                        )
+
+                if sqlite_config is not None:
+                    try:
+                        write_to_sqlite(crc_error_data, sqlite_config)
+                    except Exception as sink_error:
+                        handle_sink_error(
+                            inverter_name=inverter_name,
+                            alert_configs=alert_configs,
+                            data=crc_error_data,
+                            sink="sqlite",
+                            error=sink_error,
+                            alert_state=alert_state,
+                        )
+
+                if supabase_config is not None:
+                    try:
+                        write_to_supabase(crc_error_data, supabase_config)
+                    except Exception as sink_error:
+                        handle_sink_error(
+                            inverter_name=inverter_name,
+                            alert_configs=alert_configs,
+                            data=crc_error_data,
+                            sink="supabase",
+                            error=sink_error,
+                            alert_state=alert_state,
+                        )
 
         if collect_interval is None:
             break
