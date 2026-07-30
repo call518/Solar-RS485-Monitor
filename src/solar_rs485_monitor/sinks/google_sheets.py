@@ -29,6 +29,26 @@ _cached_worksheet_name = None
 _cached_worksheet = None
 
 
+def get_api_error_status_code(error: APIError) -> int | None:
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+
+    if isinstance(status_code, int):
+        return status_code
+
+    code = getattr(error, "code", None)
+    if isinstance(code, int):
+        return code
+
+    return None
+
+
+def format_google_api_error(error: APIError) -> str:
+    status_code = get_api_error_status_code(error)
+    status = status_code if status_code is not None else "unknown"
+    return f"Google Sheets API error (status={status}). {error}"
+
+
 def get_google_sheet_file_name() -> str:
     file_name = os.getenv("GOOGLE_SHEET_FILE_NAME", "").strip()
 
@@ -157,11 +177,7 @@ def ensure_yearly_monthly_worksheets(
     monthly_titles = [f"{year}-{month:02d}" for month in range(1, 13)]
     worksheet_cache = {}
 
-    try:
-        worksheets = spreadsheet.worksheets()
-    except APIError:
-        worksheets = []
-
+    worksheets = spreadsheet.worksheets()
     for worksheet in worksheets:
         worksheet_cache[worksheet.title] = worksheet
 
@@ -211,11 +227,11 @@ def get_google_sheet(reference_time: datetime | None = None):
         return worksheet
 
     except APIError as e:
-        raise RuntimeError(f"Google Sheets API error. {e}")
+        raise RuntimeError(format_google_api_error(e))
 
 
 def write_to_google_sheet(worksheet, data: dict) -> None:
-    worksheet.append_row([
+    row = [
         data["@timestamp"],
         data["inverter_name"],
         data["inverter_id"],
@@ -229,4 +245,9 @@ def write_to_google_sheet(worksheet, data: dict) -> None:
         data["output_ac_frequency_hz"],
         data["total_generation_kwh"],
         data["fault_code"],
-    ])
+    ]
+
+    try:
+        worksheet.append_row(row)
+    except APIError as e:
+        raise RuntimeError(format_google_api_error(e))

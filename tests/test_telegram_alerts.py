@@ -142,6 +142,33 @@ def test_sink_error_alert_sends_sink_failure_message(monkeypatch) -> None:
     assert "Error: `database is locked`" in sent_messages[0]
 
 
+def test_google_sheet_error_alert_shows_google_sheet_status(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    result = telegram.send_sink_error_alert(
+        data=make_data(0),
+        config={**make_config(), "send_sink_error": True},
+        sink="google_sheet",
+        error=RuntimeError("Google Sheets API error (status=502). temporary error"),
+        event="sink_write_failed",
+    )
+
+    assert result["skipped"] is False
+    assert len(sent_messages) == 1
+    assert "Solar RS485 Google Sheets Write Failed" in sent_messages[0]
+    assert "Google Sheets status: `502`" in sent_messages[0]
+    assert "Solar RS485 Sink Write Failed: google_sheet" not in sent_messages[0]
+
+
 def test_sink_error_alert_can_be_disabled(monkeypatch) -> None:
     sent_messages = []
 
@@ -186,6 +213,30 @@ def test_sink_error_alert_escapes_backticks(monkeypatch) -> None:
 
     assert "bad'name" in sent_messages[0]
     assert "database 'locked'" in sent_messages[0]
+
+
+def test_sink_error_alert_truncates_long_error(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    telegram.send_sink_error_alert(
+        data=make_data(0),
+        config={**make_config(), "send_sink_error": True},
+        sink="google_sheet",
+        error=RuntimeError("<html>" + ("temporary server error " * 50) + "</html>"),
+    )
+
+    assert len(sent_messages[0]) < 800
+    assert "temporary server error" in sent_messages[0]
+    assert sent_messages[0].count("\n") < 10
 
 
 def test_system_error_alert_can_be_disabled(monkeypatch) -> None:

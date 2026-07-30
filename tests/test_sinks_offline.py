@@ -1,8 +1,9 @@
 from datetime import datetime
 
 import pytest
+from requests import Response
 
-from solar_rs485_monitor.sinks import mariadb, sqlite, supabase, thingspeak
+from solar_rs485_monitor.sinks import google_sheets, mariadb, sqlite, supabase, thingspeak
 
 
 def make_data() -> dict:
@@ -22,6 +23,13 @@ def make_data() -> dict:
         "fault_code": 0,
         "raw_frame_hex": "7e 01 02",
     }
+
+
+def make_google_api_error(status_code: int, body: str) -> google_sheets.APIError:
+    response = Response()
+    response.status_code = status_code
+    response._content = body.encode()
+    return google_sheets.APIError(response)
 
 
 def test_sqlite_build_row_preserves_column_order_and_timestamp() -> None:
@@ -106,6 +114,34 @@ def test_database_rows_accept_collector_crc_error_payload() -> None:
         None,
         "[V:1] 4f ab 7e 01",
     ]
+
+
+def test_google_sheet_write_reports_google_api_status_after_single_attempt() -> None:
+    attempts = []
+
+    class Worksheet:
+        def append_row(self, row: list) -> None:
+            attempts.append(row)
+            raise make_google_api_error(502, "<html>Error 502</html>")
+
+    with pytest.raises(RuntimeError, match=r"status=502"):
+        google_sheets.write_to_google_sheet(Worksheet(), make_data())
+
+    assert len(attempts) == 1
+
+
+def test_google_sheet_write_reports_non_transient_api_status() -> None:
+    attempts = []
+
+    class Worksheet:
+        def append_row(self, row: list) -> None:
+            attempts.append(row)
+            raise make_google_api_error(403, "permission denied")
+
+    with pytest.raises(RuntimeError, match=r"status=403"):
+        google_sheets.write_to_google_sheet(Worksheet(), make_data())
+
+    assert len(attempts) == 1
 
 
 def test_supabase_build_row_preserves_timezone_aware_timestamp() -> None:

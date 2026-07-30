@@ -1,3 +1,11 @@
+import re
+
+
+MAX_ERROR_MESSAGE_LENGTH = 500
+GOOGLE_SHEET_SINK_NAMES = {"google_sheet", "google_sheets", "googlesheet"}
+GOOGLE_SHEET_STATUS_RE = re.compile(r"(?:status=|error\s+)(\d{3})", re.IGNORECASE)
+
+
 def parse_int_value(value, default: int = 0) -> int:
     try:
         return int(value)
@@ -13,6 +21,36 @@ def has_fault_event(fault_code: int) -> bool:
 def format_code(value) -> str:
     text = str(value).replace("`", "'")
     return f"`{text}`"
+
+
+def format_error(error: Exception) -> str:
+    text = " ".join(str(error).replace("`", "'").split())
+    if len(text) > MAX_ERROR_MESSAGE_LENGTH:
+        text = f"{text[:MAX_ERROR_MESSAGE_LENGTH]}..."
+    return f"`{text}`"
+
+
+def extract_google_sheet_status(error: Exception) -> str:
+    match = GOOGLE_SHEET_STATUS_RE.search(str(error))
+    return match.group(1) if match else "-"
+
+
+def is_google_sheet_sink(sink: str) -> bool:
+    return sink.strip().lower() in GOOGLE_SHEET_SINK_NAMES
+
+
+def get_sink_error_title(sink: str, event: str) -> str:
+    action_titles = {
+        "sink_init_failed": "Initialization Failed",
+        "sink_write_failed": "Write Failed",
+        "sink_insert_failed": "Insert Failed",
+    }
+    action = action_titles.get(event, "Error")
+
+    if is_google_sheet_sink(sink):
+        return f"Solar RS485 Google Sheets {action}"
+
+    return f"Solar RS485 Sink {action}: {sink}"
 
 
 def format_active_bits(fault_code: int) -> str:
@@ -97,21 +135,22 @@ def build_sink_error_message(
     error: Exception,
     event: str = "sink_insert_failed",
 ) -> str:
-    titles = {
-        "sink_init_failed": "Solar RS485 Sink Initialization Failed",
-        "sink_write_failed": "Solar RS485 Sink Write Failed",
-        "sink_insert_failed": "Solar RS485 Sink Insert Failed",
-    }
-    title = titles.get(event, "Solar RS485 Sink Error")
+    title = get_sink_error_title(sink=sink, event=event)
+    sink_lines = [f"Sink: {format_code(sink)}"]
+
+    if is_google_sheet_sink(sink):
+        sink_lines.append(
+            f"Google Sheets status: {format_code(extract_google_sheet_status(error))}"
+        )
 
     return "\n".join(
         [
-            f"*{title}: {sink}*",
+            f"*{title}*",
             f"Time: {format_code(data.get('@timestamp', '-'))}",
             f"Inverter: {format_code(data.get('inverter_name', '-'))} "
             f"(ID {format_code(data.get('inverter_id', '-'))})",
-            f"Sink: {format_code(sink)}",
-            f"Error: {format_code(error)}",
+            *sink_lines,
+            f"Error: {format_error(error)}",
             "",
             f"Total: {format_code(data.get('total_generation_kwh', '-'))} kWh",
             f"Fault code: {format_code(data.get('fault_code', '-'))}",
@@ -132,7 +171,7 @@ def build_system_error_message(
         f"Inverter: {format_code(data.get('inverter_name', '-'))}",
         f"Component: {format_code(component)}",
         f"Event: {format_code(event)}",
-        f"Error: {format_code(error)}",
+        f"Error: {format_error(error)}",
     ]
 
     if failures is not None:
