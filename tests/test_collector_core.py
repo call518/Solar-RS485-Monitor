@@ -250,6 +250,50 @@ def test_build_collector_crc_error_data_leaves_fault_code_null() -> None:
     assert data["total_generation_kwh"] is None
 
 
+def test_sqlite_daily_generation_uses_current_local_day(tmp_path) -> None:
+    config = {
+        "path": str(tmp_path / "solar.sqlite3"),
+        "table": "inverter_log",
+    }
+
+    def row(timestamp: str, total_generation_kwh: float) -> dict:
+        return {
+            "@timestamp": timestamp,
+            "inverter_name": "Test Inverter",
+            "inverter_id": 1,
+            "input_dc_voltage_v": 0,
+            "input_dc_current_a": 0.0,
+            "input_dc_power_w": 0,
+            "output_ac_voltage_v": 0,
+            "output_ac_current_a": 0.0,
+            "output_ac_power_w": 0,
+            "output_ac_power_factor_pct": 0.0,
+            "output_ac_frequency_hz": 0.0,
+            "total_generation_kwh": total_generation_kwh,
+            "fault_code": 0,
+            "raw_frame_hex": "00",
+        }
+
+    collector.write_to_sqlite(
+        config=config,
+        data=row("2026-08-19T14:50:00+00:00", 90.0),
+    )
+    collector.write_to_sqlite(
+        config=config,
+        data=row("2026-08-19T15:10:00+00:00", 100.0),
+    )
+    collector.write_to_sqlite(
+        config=config,
+        data=row("2026-08-20T09:51:20+00:00", 112.345),
+    )
+
+    assert collector.read_sqlite_daily_generation_kwh(
+        config=config,
+        timestamp_text="2026-08-20T09:51:20+00:00",
+        timezone_name="Asia/Seoul",
+    ) == pytest.approx(12.345)
+
+
 def test_low_output_power_derives_standby_when_bit_zero_not_seen() -> None:
     result = collector.apply_operation_state(
         data={"fault_code": 0, "output_ac_power_w": 12},

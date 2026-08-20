@@ -94,6 +94,40 @@ def test_power_derived_operation_state_sends_standby_transition(monkeypatch) -> 
     assert "Reason: `low_output_power`" in sent_messages[0]
 
 
+def test_standby_event_includes_daily_generation_when_present(monkeypatch) -> None:
+    sent_messages = []
+
+    def fake_send_to_all_chat_ids(config: dict, text: str) -> dict:
+        sent_messages.append(text)
+        return {
+            "sent": [{"chat_id": "123", "message_id": len(sent_messages)}],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(telegram, "_last_operation_stopped", None)
+    monkeypatch.setattr(telegram, "send_to_all_chat_ids", fake_send_to_all_chat_ids)
+
+    telegram.write_to_telegram(
+        {
+            **make_data(0),
+            "operation_stopped": False,
+        },
+        make_config(),
+    )
+    result = telegram.write_to_telegram(
+        {
+            **make_data(0),
+            "operation_stopped": True,
+            "operation_state_reason": "low_output_power",
+            "daily_generation_kwh": 12.3454,
+        },
+        make_config(),
+    )
+
+    assert result["skipped"] is False
+    assert "Daily generation: `12.345` kWh" in sent_messages[0]
+
+
 def test_standby_to_fault_does_not_send_normal_event(monkeypatch) -> None:
     sent_messages = []
 

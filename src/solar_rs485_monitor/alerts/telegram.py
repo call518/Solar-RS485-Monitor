@@ -162,6 +162,13 @@ def send_to_all_chat_ids(config: dict, text: str) -> dict:
     }
 
 
+def format_kwh(value) -> str:
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def build_operation_state_message(data: dict, fault_code: int, state: str) -> str:
     expected_bit_value = 1 if state == "STANDBY" else 0
     actual_bit_value = 1 if fault_code & OPERATION_STOP_MASK else 0
@@ -183,6 +190,12 @@ def build_operation_state_message(data: dict, fault_code: int, state: str) -> st
     reason = data.get("operation_state_reason")
     if reason:
         lines.append(f"Reason: {format_code(reason)}")
+
+    daily_generation_kwh = data.get("daily_generation_kwh")
+    if daily_generation_kwh is not None:
+        lines.append(
+            f"Daily generation: {format_code(format_kwh(daily_generation_kwh))} kWh"
+        )
 
     return "\n".join(lines)
 

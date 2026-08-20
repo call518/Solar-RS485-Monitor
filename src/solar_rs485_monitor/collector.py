@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ from solar_rs485_monitor.sinks.google_sheets import (
 )
 from solar_rs485_monitor.sinks.mariadb import (
     get_mariadb_config,
+    require_identifier as require_mariadb_identifier,
     write_to_mariadb,
 )
 from solar_rs485_monitor.sinks.opensearch import (
@@ -36,6 +38,7 @@ from solar_rs485_monitor.sinks.supabase import (
 )
 from solar_rs485_monitor.sinks.sqlite import (
     get_sqlite_config,
+    require_identifier as require_sqlite_identifier,
     write_to_sqlite,
 )
 from solar_rs485_monitor.sinks.thingspeak import (
@@ -340,6 +343,125 @@ def parse_utc_datetime(value: str) -> datetime:
         return timestamp.replace(tzinfo=timezone.utc)
 
     return timestamp.astimezone(timezone.utc)
+
+
+def get_local_day_bounds_utc(
+    timestamp_text: str,
+    timezone_name: str,
+) -> tuple[datetime, datetime]:
+    local_timezone = ZoneInfo(timezone_name)
+    timestamp = parse_utc_datetime(timestamp_text)
+    local_timestamp = timestamp.astimezone(local_timezone)
+    local_start = datetime.combine(
+        local_timestamp.date(),
+        datetime_time.min,
+        tzinfo=local_timezone,
+    )
+    return local_start.astimezone(timezone.utc), timestamp
+
+
+def read_sqlite_daily_generation_kwh(
+    config: dict,
+    timestamp_text: str,
+    timezone_name: str,
+) -> float | None:
+    database_path = Path(config["path"]).expanduser()
+    table = require_sqlite_identifier(config["table"], "table")
+    since, until = get_local_day_bounds_utc(timestamp_text, timezone_name)
+    sql = (
+        "SELECT "
+        "MAX(CAST(\"total_generation_kwh\" AS REAL)) - "
+        "COALESCE(MIN(NULLIF(CAST(\"total_generation_kwh\" AS REAL), 0)), "
+        "MAX(CAST(\"total_generation_kwh\" AS REAL))) "
+        f"FROM \"{table}\" "
+        "WHERE CAST(strftime('%s', timestamp) AS INTEGER) >= ? "
+        "AND CAST(strftime('%s', timestamp) AS INTEGER) <= ? "
+        "AND \"total_generation_kwh\" IS NOT NULL"
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            sql,
+            (int(since.timestamp()), int(until.timestamp())),
+        ).fetchone()
+
+    value = row[0] if row else None
+    return max(0.0, float(value)) if value is not None else None
+
+
+def read_mariadb_daily_generation_kwh(
+    config: dict,
+    timestamp_text: str,
+    timezone_name: str,
+) -> float | None:
+    try:
+        import pymysql
+    except ImportError as e:
+        raise RuntimeError(
+            "PyMySQL is required for MariaDB daily generation lookup."
+        ) from e
+
+    table = require_mariadb_identifier(config["table"], "table")
+    since, until = get_local_day_bounds_utc(timestamp_text, timezone_name)
+    sql = (
+        "SELECT "
+        "MAX(`total_generation_kwh`) - "
+        "COALESCE(MIN(NULLIF(`total_generation_kwh`, 0)), "
+        "MAX(`total_generation_kwh`)) "
+        f"FROM `{table}` "
+        "WHERE `timestamp` >= %s "
+        "AND `timestamp` <= %s "
+        "AND `total_generation_kwh` IS NOT NULL"
+    )
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql,
+                (
+                    since.replace(tzinfo=None),
+                    until.replace(tzinfo=None),
+                ),
+            )
+            row = cursor.fetchone()
+
+    value = row[0] if row else None
+    return max(0.0, float(value)) if value is not None else None
+
+
+def read_daily_generation_kwh(
+    data: dict,
+    timezone_name: str,
+    mariadb_config: dict | None,
+    sqlite_config: dict | None,
+) -> float | None:
+    if not data.get("@timestamp"):
+        return None
+
+    if mariadb_config is not None:
+        return read_mariadb_daily_generation_kwh(
+            config=mariadb_config,
+            timestamp_text=data["@timestamp"],
+            timezone_name=timezone_name,
+        )
+
+    if sqlite_config is not None:
+        return read_sqlite_daily_generation_kwh(
+            config=sqlite_config,
+            timestamp_text=data["@timestamp"],
+            timezone_name=timezone_name,
+        )
+
+    return None
 
 
 def has_fault_event(fault_code: int) -> bool:
@@ -1290,6 +1412,7 @@ def main() -> None:
                 verify_crc=verify_crc,
                 read_retries=read_retries,
             )
+            previous_operation_stopped_before = previous_operation_stopped
             result = apply_operation_state(
                 data=result,
                 previous_operation_stopped=previous_operation_stopped,
@@ -1297,6 +1420,10 @@ def main() -> None:
                 normal_power_w_threshold=normal_power_w_threshold,
             )
             previous_operation_stopped = bool(result["operation_stopped"])
+            standby_transition = (
+                previous_operation_stopped_before is False
+                and previous_operation_stopped is True
+            )
 
             try:
                 write_collector_state(collector_state_path, result)
@@ -1459,6 +1586,30 @@ def main() -> None:
                         sink="supabase",
                         error=e,
                         alert_state=alert_state,
+                    )
+
+            telegram_config = alert_configs.get("telegram")
+            if (
+                standby_transition
+                and telegram_config is not None
+                and telegram_config.get("send_standby_event", False)
+            ):
+                try:
+                    daily_generation_kwh = read_daily_generation_kwh(
+                        data=result,
+                        timezone_name=collector_local_timezone,
+                        mariadb_config=mariadb_config,
+                        sqlite_config=sqlite_config,
+                    )
+                    if daily_generation_kwh is not None:
+                        result["daily_generation_kwh"] = daily_generation_kwh
+                except Exception as e:
+                    warning_event(
+                        event="daily_generation_lookup_failed",
+                        component="collector",
+                        inverter_name=inverter_name,
+                        error=str(e),
+                        action="telegram_standby_event_without_daily_generation",
                     )
 
             for channel, config in alert_configs.items():
