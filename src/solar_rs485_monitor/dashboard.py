@@ -46,6 +46,7 @@ DEFAULT_DASHBOARD_DAILY_GENERATION_DAYS = 14
 DEFAULT_DASHBOARD_WEEKLY_GENERATION_WEEKS = 16
 DEFAULT_DASHBOARD_MONTHLY_GENERATION_MONTHS = 12
 DEFAULT_DASHBOARD_YEARLY_GENERATION_YEARS = 10
+DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD = 20.0
 DASHBOARD_AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 DASHBOARD_AUTH_HASH_ITERATIONS = 260000
 DASHBOARD_AUTH_SESSION_KEY = "solar_rs485_monitor_dashboard_auth_user"
@@ -167,7 +168,7 @@ UI_TEXT = {
         "yearly_generation_scope": "(조회 종료일 기준 고정 {years}년 표시)",
         "yearly_generation_empty": "최근 {years}년에 연간 발전량 데이터가 없습니다.",
         "fault_events": "장애 이벤트 (최근 200건)",
-        "fault_events_caption": "선택한 범위에서 fault_code가 0이 아닌 최신 이벤트입니다.",
+        "fault_events_caption": "선택한 범위에서 fault_code가 0이 아니거나 standby로 판정된 최신 이벤트입니다.",
         "fault_events_empty": "선택한 범위에서 장애 이벤트가 없습니다.",
         "active_bits": "활성 비트",
         "fault_code_label": "점검 코드 설명",
@@ -228,7 +229,7 @@ UI_TEXT = {
         "yearly_generation_scope": "Fixed display: {years} years relative to the selected end date.",
         "yearly_generation_empty": "No yearly generation data in the last {years} years.",
         "fault_events": "Fault Events (Recent 200)",
-        "fault_events_caption": "Latest events where fault_code is non-zero within the selected date range.",
+        "fault_events_caption": "Latest non-zero fault_code or standby-derived events within the selected date range.",
         "fault_events_empty": "No fault events in the selected date range.",
         "active_bits": "Active bits",
         "fault_code_label": "Fault code detail",
@@ -537,6 +538,18 @@ def get_dashboard_yearly_generation_years() -> int:
     )
 
 
+def get_collector_standby_power_w_threshold() -> float:
+    raw = os.getenv(
+        "COLLECTOR_STANDBY_POWER_W_THRESHOLD",
+        str(DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD),
+    ).strip()
+
+    try:
+        return float(raw)
+    except ValueError:
+        return DEFAULT_COLLECTOR_STANDBY_POWER_W_THRESHOLD
+
+
 RGB_COLOR_RE = re.compile(
     r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$",
     re.IGNORECASE,
@@ -594,6 +607,20 @@ def is_operation_stopped(fault_code: int) -> bool:
 
 def has_fault_condition(fault_code: int) -> bool:
     return any(fault_code & (1 << bit) for bit in get_fault_event_bits())
+
+
+def is_standby_by_power(output_ac_power_w) -> bool:
+    try:
+        return float(output_ac_power_w) <= get_collector_standby_power_w_threshold()
+    except (TypeError, ValueError):
+        return False
+
+
+def is_dashboard_operation_stopped(fault_code: int, output_ac_power_w=None) -> bool:
+    return is_operation_stopped(fault_code) or (
+        not has_fault_condition(fault_code)
+        and is_standby_by_power(output_ac_power_w)
+    )
 
 
 def get_fault_code_label(fault_code: int) -> str | None:
@@ -744,6 +771,18 @@ def format_fault_event_label(value, virtual_event) -> str:
         return "-"
 
     return get_fault_code_label(fault_code) or f"FAULT CODE {fault_code}"
+
+
+def is_power_standby_event(value, virtual_event, output_ac_power_w) -> bool:
+    if get_virtual_event_label(virtual_event):
+        return False
+
+    try:
+        fault_code = int(float(value))
+    except (TypeError, ValueError):
+        fault_code = 0
+
+    return fault_code == 0 and is_standby_by_power(output_ac_power_w)
 
 
 def is_dashboard_auth_enabled() -> bool:
@@ -1771,10 +1810,12 @@ def read_sqlite_fault_events(
 
     virtual_event_condition = build_virtual_event_condition('"', "?")
     sql = (
-        "SELECT timestamp, inverter_name, inverter_id, fault_code, raw_frame_hex "
+        "SELECT timestamp, inverter_name, inverter_id, fault_code, "
+        "output_ac_power_w, raw_frame_hex "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
         "AND (CAST(\"fault_code\" AS INTEGER) != 0 OR "
+        "CAST(\"output_ac_power_w\" AS REAL) <= ? OR "
         f"({virtual_event_condition})) "
         "ORDER BY timestamp DESC LIMIT ?"
     )
@@ -1786,6 +1827,7 @@ def read_sqlite_fault_events(
             params=[
                 since.isoformat(),
                 until.isoformat(),
+                get_collector_standby_power_w_threshold(),
                 get_virtual_event_like_pattern(),
                 limit,
             ],
@@ -1807,10 +1849,11 @@ def read_mariadb_fault_events(
     virtual_event_condition = build_virtual_event_condition("`", "%s")
     sql = (
         "SELECT `timestamp`, `inverter_name`, `inverter_id`, `fault_code`, "
-        "`raw_frame_hex` "
+        "`output_ac_power_w`, `raw_frame_hex` "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
         "AND (CAST(`fault_code` AS SIGNED) != 0 OR "
+        "CAST(`output_ac_power_w` AS DECIMAL(12,3)) <= %s OR "
         f"({virtual_event_condition})) "
         "ORDER BY `timestamp` DESC LIMIT %s"
     )
@@ -1831,7 +1874,13 @@ def read_mariadb_fault_events(
         df = pd.read_sql_query(
             sql,
             connection,
-            params=[since, until, get_virtual_event_like_pattern(), limit],
+            params=[
+                since,
+                until,
+                get_collector_standby_power_w_threshold(),
+                get_virtual_event_like_pattern(),
+                limit,
+            ],
         )
 
     return normalize_dataframe(df)
@@ -2765,7 +2814,8 @@ def read_mariadb_latest_status_sample(
 
     sql = (
         "SELECT `timestamp`, `inverter_name`, `inverter_id`, "
-        "CAST(`fault_code` AS SIGNED) AS `fault_code` "
+        "CAST(`fault_code` AS SIGNED) AS `fault_code`, "
+        "`output_ac_power_w` "
         f"FROM `{table}` "
         "WHERE `timestamp` >= %s AND `timestamp` <= %s "
         "AND `total_generation_kwh` IS NOT NULL "
@@ -2804,7 +2854,8 @@ def read_sqlite_latest_status_sample(
 
     sql = (
         "SELECT timestamp, inverter_name, inverter_id, "
-        "CAST(\"fault_code\" AS INTEGER) AS fault_code "
+        "CAST(\"fault_code\" AS INTEGER) AS fault_code, "
+        "output_ac_power_w "
         f"FROM \"{table}\" "
         "WHERE timestamp >= ? AND timestamp <= ? "
         "AND \"total_generation_kwh\" IS NOT NULL "
@@ -3111,21 +3162,39 @@ def render_fault_events_table(
     display_df = display_df.sort_values("timestamp", ascending=False).head(200)
     if "raw_frame_hex" not in display_df.columns:
         display_df["raw_frame_hex"] = None
+    if "output_ac_power_w" not in display_df.columns:
+        display_df["output_ac_power_w"] = None
     display_df["virtual_event"] = display_df["raw_frame_hex"].map(
         extract_virtual_event
     )
 
     display_df[text["active_bits"]] = display_df.apply(
-        lambda row: format_fault_event_active_bits(
-            row["fault_code"],
-            row["virtual_event"],
+        lambda row: (
+            "대기판정"
+            if is_power_standby_event(
+                row["fault_code"],
+                row["virtual_event"],
+                row["output_ac_power_w"],
+            )
+            else format_fault_event_active_bits(
+                row["fault_code"],
+                row["virtual_event"],
+            )
         ),
         axis=1,
     )
     display_df[text["fault_code_label"]] = display_df.apply(
-        lambda row: format_fault_event_label(
-            row["fault_code"],
-            row["virtual_event"],
+        lambda row: (
+            "STANDBY: low_output_power"
+            if is_power_standby_event(
+                row["fault_code"],
+                row["virtual_event"],
+                row["output_ac_power_w"],
+            )
+            else format_fault_event_label(
+                row["fault_code"],
+                row["virtual_event"],
+            )
         ),
         axis=1,
     )
@@ -3550,7 +3619,10 @@ def render_dashboard_body(
     except (TypeError, ValueError):
         fault_code = 0
 
-    operation_stopped = is_operation_stopped(fault_code)
+    operation_stopped = is_dashboard_operation_stopped(
+        fault_code,
+        status_sample.get("output_ac_power_w"),
+    )
     has_fault = has_fault_condition(fault_code)
 
     if has_fault:
@@ -3577,6 +3649,9 @@ def render_dashboard_body(
             detail_text = "\n".join(detail_rows)
         else:
             detail_text = fault_event_labels or f"FAULT CODE {fault_code}"
+        fault_code_detail = detail_text
+    elif operation_stopped:
+        detail_text = "STANDBY: low_output_power"
         fault_code_detail = detail_text
     else:
         detail_text = text["fault_normal"]
