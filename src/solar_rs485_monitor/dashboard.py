@@ -143,7 +143,7 @@ UI_TEXT = {
         "no_rows": "선택한 소스와 기간에 해당하는 데이터가 없습니다.",
         "inverter": "인버터",
         "id": "ID",
-        "latest": "최신 시각",
+        "latest": "최신 측정 시각",
         "ac_output_w": "AC 출력 (W)",
         "status": "상태",
         "fault_normal": "정상",
