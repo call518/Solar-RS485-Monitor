@@ -17,6 +17,7 @@ from solar_rs485_monitor.dashboard import (
     is_dashboard_operation_stopped,
     is_operation_stopped,
     is_power_standby_event,
+    read_sqlite_yearly_generation,
     read_sqlite_fault_events,
 )
 from solar_rs485_monitor.sinks import sqlite as sqlite_sink
@@ -99,6 +100,54 @@ def test_generation_snapshot_uses_year_end_delta_when_provided() -> None:
     )
 
     assert snapshot["yearly_generation_kwh"] == 1234.063
+
+
+def test_sqlite_yearly_generation_uses_cumulative_increments(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "dashboard.sqlite3"
+    config = {"path": str(database_path), "table": "inverter_log"}
+
+    rows = [
+        ("2026-01-01T00:00:00+00:00", 100.0),
+        ("2026-06-01T00:00:00+00:00", 275.5),
+        ("2026-06-02T00:00:00+00:00", 0.0),
+        ("2026-07-01T00:00:00+00:00", 20.0),
+        ("2026-09-01T00:00:00+00:00", 123.063),
+    ]
+    for index, (timestamp, total_generation_kwh) in enumerate(rows, start=1):
+        data = {
+            "@timestamp": timestamp,
+            "inverter_name": "Test Inverter",
+            "inverter_id": 1,
+            "input_dc_voltage_v": 138,
+            "input_dc_current_a": 0.0,
+            "input_dc_power_w": 0,
+            "output_ac_voltage_v": 225,
+            "output_ac_current_a": 0.0,
+            "output_ac_power_w": 0,
+            "output_ac_power_factor_pct": 85.0,
+            "output_ac_frequency_hz": 59.98,
+            "total_generation_kwh": total_generation_kwh,
+            "fault_code": 0,
+            "raw_frame_hex": f"7e {index:02x}",
+        }
+        sqlite_sink.write_to_sqlite(data=data, config=config)
+
+    monkeypatch.setattr(
+        "solar_rs485_monitor.dashboard.get_sqlite_config",
+        lambda: config,
+    )
+
+    yearly_df = read_sqlite_yearly_generation(
+        since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        display_timezone=ZoneInfo("Asia/Seoul"),
+    )
+
+    assert yearly_df["label"].to_list() == ["2026"]
+    assert yearly_df["value"].to_list() == pytest.approx([398.563])
 
 
 def test_collector_virtual_event_is_rendered_without_fault_code() -> None:
