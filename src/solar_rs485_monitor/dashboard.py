@@ -13,6 +13,7 @@ import sys
 import time
 import warnings
 from collections.abc import Sequence
+from typing import Any
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -2922,7 +2923,9 @@ def read_mariadb_daily_generation(
     since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
     until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
 
-    offset_text = format_timezone_offset(datetime.now(timezone.utc).astimezone(display_timezone))
+    offset_text = format_timezone_offset(
+        datetime.now(timezone.utc).astimezone(display_timezone)
+    )
     sql = (
         "SELECT "
         "DATE(CONVERT_TZ(`timestamp`, '+00:00', %s)) AS day_local, "
@@ -2987,7 +2990,9 @@ def read_sqlite_daily_generation(
     if not database_path.is_file():
         raise RuntimeError(f"SQLite database not found: {database_path}")
 
-    offset_text = format_timezone_offset(datetime.now(timezone.utc).astimezone(display_timezone))
+    offset_text = format_timezone_offset(
+        datetime.now(timezone.utc).astimezone(display_timezone)
+    )
     sql = (
         "SELECT "
         "date(datetime(CAST(strftime('%s', timestamp) AS INTEGER), 'unixepoch', ?)) AS day_local, "
@@ -3047,6 +3052,181 @@ def read_daily_generation(
     )
 
 
+def build_yearly_generation_from_cumulative_samples(
+    sample_df: Any,
+    display_timezone: ZoneInfo,
+) -> Any:
+    import pandas as pd
+
+    if sample_df.empty:
+        return pd.DataFrame(columns=["label", "value"])
+
+    chart_data = sample_df.dropna(subset=["timestamp", "total_generation_kwh"]).copy()
+    if chart_data.empty:
+        return pd.DataFrame(columns=["label", "value"])
+
+    chart_data["timestamp"] = chart_data["timestamp"].map(coerce_utc_datetime)
+    chart_data["total_generation_kwh"] = pd.to_numeric(
+        chart_data["total_generation_kwh"],
+        errors="coerce",
+    )
+    chart_data = chart_data.dropna(subset=["total_generation_kwh"])
+    chart_data = chart_data.sort_values("timestamp")
+
+    previous_total: float | None = None
+    values_by_label: dict[str, float] = {}
+    for _, row in chart_data.iterrows():
+        current_total = float(row["total_generation_kwh"])
+        if current_total <= 0:
+            continue
+
+        if previous_total is None or current_total < previous_total:
+            increment = current_total
+        else:
+            increment = current_total - previous_total
+
+        timestamp = row["timestamp"].astimezone(display_timezone)
+        label = timestamp.strftime("%Y")
+        values_by_label[label] = values_by_label.get(label, 0.0) + max(increment, 0.0)
+        previous_total = current_total
+
+    return pd.DataFrame(
+        [
+            {"label": label, "value": value}
+            for label, value in sorted(values_by_label.items())
+        ],
+        columns=["label", "value"],
+    )
+
+
+def read_mariadb_yearly_generation(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+) -> Any:
+    import pandas as pd
+    import pymysql
+
+    config = get_mariadb_config()
+    validate_mariadb_config(config)
+    table = require_mariadb_identifier(config["table"], "table")
+
+    since_naive = since.astimezone(timezone.utc).replace(tzinfo=None)
+    until_naive = until.astimezone(timezone.utc).replace(tzinfo=None)
+    sql = (
+        "SELECT label, SUM(increment) AS value "
+        "FROM ("
+        "SELECT label, "
+        "CASE "
+        "WHEN @previous_total IS NULL THEN total_generation_kwh "
+        "WHEN total_generation_kwh >= @previous_total "
+        "THEN total_generation_kwh - @previous_total "
+        "ELSE total_generation_kwh "
+        "END AS increment, "
+        "@previous_total := total_generation_kwh "
+        "FROM ("
+        "SELECT YEAR(CONVERT_TZ(`timestamp`, '+00:00', %s)) AS label, "
+        "`total_generation_kwh` AS total_generation_kwh "
+        f"FROM `{table}` "
+        "WHERE `timestamp` >= %s AND `timestamp` <= %s "
+        "AND `total_generation_kwh` IS NOT NULL "
+        "AND `total_generation_kwh` > 0 "
+        "ORDER BY `timestamp` ASC, `id` ASC"
+        ") ordered_samples "
+        "JOIN (SELECT @previous_total := NULL) variables"
+        ") increments "
+        "GROUP BY label "
+        "ORDER BY label ASC"
+    )
+
+    with pymysql.connect(
+        host=config["host"],
+        port=config["port"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=config["connect_timeout"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
+
+        offset_text = format_timezone_offset(
+            datetime.now(timezone.utc).astimezone(display_timezone)
+        )
+        result_df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[offset_text, since_naive, until_naive],
+        )
+
+    if result_df.empty:
+        return pd.DataFrame(columns=["label", "value"])
+
+    result_df["label"] = result_df["label"].astype(str)
+    result_df["value"] = pd.to_numeric(result_df["value"], errors="coerce").fillna(0.0)
+    return result_df[["label", "value"]]
+
+
+def read_sqlite_yearly_generation(
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+) -> Any:
+    import pandas as pd
+
+    config = get_sqlite_config()
+    database_path = Path(config["path"]).expanduser()
+    table = require_sqlite_identifier(config["table"], "table")
+
+    if not database_path.is_file():
+        raise RuntimeError(f"SQLite database not found: {database_path}")
+
+    sql = (
+        "SELECT "
+        "timestamp, "
+        "CAST(\"total_generation_kwh\" AS REAL) AS total_generation_kwh "
+        f"FROM \"{table}\" "
+        "WHERE timestamp >= ? AND timestamp <= ? "
+        "AND \"total_generation_kwh\" IS NOT NULL "
+        "ORDER BY timestamp ASC, id ASC"
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_sqlite_table(connection, table)
+        sample_df = pd.read_sql_query(
+            sql,
+            connection,
+            params=[since.isoformat(), until.isoformat()],
+        )
+
+    return build_yearly_generation_from_cumulative_samples(
+        sample_df,
+        display_timezone,
+    )
+
+
+def read_yearly_generation(
+    source: str,
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+) -> Any:
+    if source == "MariaDB":
+        return read_mariadb_yearly_generation(
+            since=since,
+            until=until,
+            display_timezone=display_timezone,
+        )
+
+    return read_sqlite_yearly_generation(
+        since=since,
+        until=until,
+        display_timezone=display_timezone,
+    )
+
+
 def coerce_utc_datetime(value) -> datetime:
     if hasattr(value, "to_pydatetime"):
         value = value.to_pydatetime()
@@ -3063,6 +3243,7 @@ def build_generation_snapshot(
     daily_df,
     snapshot_timestamp: datetime,
     display_timezone: ZoneInfo,
+    yearly_df: Any | None = None,
 ) -> dict[str, float]:
     snapshot_utc = coerce_utc_datetime(snapshot_timestamp)
     snapshot_local = snapshot_utc.astimezone(display_timezone)
@@ -3080,11 +3261,12 @@ def build_generation_snapshot(
         display_timezone=display_timezone,
         period="week",
     )
-    yearly_df = aggregate_generation_by_period(
-        daily_df=daily_df,
-        display_timezone=display_timezone,
-        period="year",
-    )
+    if yearly_df is None:
+        yearly_df = aggregate_generation_by_period(
+            daily_df=daily_df,
+            display_timezone=display_timezone,
+            period="year",
+        )
 
     current_day = snapshot_local.strftime("%Y-%m-%d")
     current_week = get_week_label(snapshot_local.date())
@@ -3574,6 +3756,12 @@ def render_dashboard_body(
         display_timezone=display_timezone,
         years=yearly_generation_years,
     )
+    yearly_generation_query_since = datetime(
+        yearly_generation_since.astimezone(display_timezone).year - 1,
+        1,
+        1,
+        tzinfo=display_timezone,
+    ).astimezone(timezone.utc)
     monthly_generation_labels = get_recent_month_labels(
         until=until,
         display_timezone=display_timezone,
@@ -3592,6 +3780,8 @@ def render_dashboard_body(
     )
     daily_generation_df = None
     daily_generation_error = None
+    yearly_generation_df = None
+    yearly_generation_error = None
 
     try:
         daily_generation_df = read_daily_generation(
@@ -3602,6 +3792,16 @@ def render_dashboard_body(
         )
     except Exception as e:
         daily_generation_error = e
+
+    try:
+        yearly_generation_df = read_yearly_generation(
+            source=source,
+            since=yearly_generation_query_since,
+            until=until,
+            display_timezone=display_timezone,
+        )
+    except Exception as e:
+        yearly_generation_error = e
 
     status_sample = latest
     try:
@@ -3722,6 +3922,7 @@ def render_dashboard_body(
             daily_df=daily_generation_df,
             snapshot_timestamp=datetime.now(timezone.utc),
             display_timezone=display_timezone,
+            yearly_df=yearly_generation_df,
         )
     else:
         generation_snapshot = {}
@@ -3894,11 +4095,15 @@ def render_dashboard_body(
                         display_timezone=display_timezone,
                         period="month",
                     )
-                    yearly_raw_df = aggregate_generation_by_period(
-                        daily_df=yearly_daily_df,
-                        display_timezone=display_timezone,
-                        period="year",
-                    )
+                    if yearly_generation_error is not None:
+                        st.warning(str(yearly_generation_error))
+                        yearly_raw_df = aggregate_generation_by_period(
+                            daily_df=yearly_daily_df,
+                            display_timezone=display_timezone,
+                            period="year",
+                        )
+                    else:
+                        yearly_raw_df = yearly_generation_df
                     if fixed_time_axis:
                         monthly_df = fill_period_generation_labels(
                             monthly_raw_df,

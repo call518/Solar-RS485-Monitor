@@ -2,8 +2,10 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from solar_rs485_monitor.dashboard import (
+    build_yearly_generation_from_cumulative_samples,
     build_generation_snapshot,
     format_fault_event_active_bits,
     format_fault_event_code,
@@ -45,6 +47,58 @@ def test_build_generation_snapshot_includes_current_week_generation() -> None:
     )
 
     assert snapshot["weekly_generation_kwh"] == 9.5
+
+
+def test_yearly_generation_uses_cumulative_sample_increments() -> None:
+    sample_df = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2026, 1, 1, 0, tzinfo=timezone.utc),
+                "total_generation_kwh": 100.0,
+            },
+            {
+                "timestamp": datetime(2026, 6, 1, 0, tzinfo=timezone.utc),
+                "total_generation_kwh": 275.5,
+            },
+            {
+                "timestamp": datetime(2026, 7, 1, 0, tzinfo=timezone.utc),
+                "total_generation_kwh": 20.0,
+            },
+            {
+                "timestamp": datetime(2026, 9, 1, 0, tzinfo=timezone.utc),
+                "total_generation_kwh": 123.063,
+            },
+        ]
+    )
+
+    yearly_df = build_yearly_generation_from_cumulative_samples(
+        sample_df,
+        ZoneInfo("Asia/Seoul"),
+    )
+
+    assert yearly_df["label"].to_list() == ["2026"]
+    assert yearly_df["value"].to_list() == pytest.approx([398.563])
+
+
+def test_generation_snapshot_uses_year_end_delta_when_provided() -> None:
+    daily_df = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+                "value": 4.5,
+            },
+        ]
+    )
+    yearly_df = pd.DataFrame([{"label": "2026", "value": 1234.063}])
+
+    snapshot = build_generation_snapshot(
+        daily_df=daily_df,
+        snapshot_timestamp=datetime(2026, 7, 22, 12, tzinfo=timezone.utc),
+        display_timezone=ZoneInfo("Asia/Seoul"),
+        yearly_df=yearly_df,
+    )
+
+    assert snapshot["yearly_generation_kwh"] == 1234.063
 
 
 def test_collector_virtual_event_is_rendered_without_fault_code() -> None:
