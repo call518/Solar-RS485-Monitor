@@ -25,7 +25,7 @@ COLLECTOR_SINKS=""
 ALERT_CHANNELS=""
 
 # [Alert][Optional] Minimum seconds before repeating the same operational alert.
-ALERT_COOLDOWN_SECONDS="900"
+ALERT_COOLDOWN_SECONDS="600"
 
 # [Alert][Optional] Send collector failure alerts after this many consecutive failures.
 COLLECTOR_FAILURE_ALERT_THRESHOLD="3"
