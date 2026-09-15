@@ -12,6 +12,8 @@ ExecStart=/usr/bin/env PATH=${PYTHON_VENV_PATH}/bin:/usr/local/sbin:/usr/local/b
 Restart=always
 RestartSec=10
 SyslogIdentifier=solar-rs485-monitor
+StandardOutput=append:/var/log/solar-rs485-monitor.log
+StandardError=append:/var/log/solar-rs485-monitor.log
 
 [Install]
 WantedBy=multi-user.target
