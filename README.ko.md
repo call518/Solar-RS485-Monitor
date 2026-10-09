@@ -1140,7 +1140,10 @@ GOOGLE_CLIENT_EMAIL="service-account@your-project-id.iam.gserviceaccount.com"
 서버 환경변수 `OPENAI_API_KEY` 또는 Git에서 제외된 로컬
 `solar-rs485-monitor.conf`에 키를 설정한 뒤 대시보드를 재시작합니다.
 실제 키를 소스 코드, 설정 템플릿, Git에 넣지 마세요.
-`OPENAI_MODEL` 기본값은 `gpt-4.1-mini`입니다.
+모델은 웹 드롭다운에서 선택하며, 기본 선택값은 `gpt-4.1-mini`입니다.
+최신 메트릭 아래, 누적 발전량 차트 직전의 AI 분석 영역에서 모델을 선택한 뒤
+분석 버튼을 누르세요. 모델 선택만으로 API를 호출하지 않으며 선택값은 세션에
+유지됩니다. 기존 결과에는 분석 당시 모델명이 표시됩니다.
 설정 파일 값이 서버 환경변수보다 우선합니다.
 
 본문의 **현재 데이터 AI 분석** 버튼을 누르면 로드된 집계 데이터의 통계,

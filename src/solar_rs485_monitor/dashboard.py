@@ -21,7 +21,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
-from solar_rs485_monitor.ai_analysis import build_analysis_summary, request_analysis
+from solar_rs485_monitor.ai_analysis import (
+    ANALYSIS_MODELS,
+    DEFAULT_ANALYSIS_MODEL,
+    AnalysisError,
+    build_analysis_summary,
+    request_analysis,
+)
 from solar_rs485_monitor.protocols import get_protocol
 from solar_rs485_monitor.sinks.mariadb import (
     get_mariadb_config,
@@ -176,6 +182,7 @@ UI_TEXT = {
         "fault_code_label": "점검 코드 설명",
         "latest_rows": "최신 데이터 (최근 200건)",
         "ai_title": "AI 분석 및 인사이트",
+        "ai_model": "모델",
         "ai_caption": (
             "버튼을 누르면 로드된 측정 통계·발전량·이벤트 요약이 OpenAI로 전송됩니다. "
             "API 사용료가 발생하며, 분석은 참고용입니다."
@@ -247,6 +254,7 @@ UI_TEXT = {
         "fault_code_label": "Fault code detail",
         "latest_rows": "Latest Rows (Recent 200)",
         "ai_title": "AI Analysis and Insights",
+        "ai_model": "Model",
         "ai_caption": (
             "Click to send loaded measurement statistics, generation and event "
             "summaries to OpenAI. API charges apply. Insights are advisory."
@@ -3955,6 +3963,27 @@ def render_dashboard_body(
         generation_snapshot=generation_snapshot,
     )
 
+    fault_events_df = None
+    fault_events_error = None
+    try:
+        fault_events_df = read_fault_events(source, since, until, limit=200)
+    except Exception as e:
+        fault_events_error = e
+
+    render_ai_analysis(
+        st,
+        df,
+        daily_generation_df,
+        fault_events_df,
+        source,
+        since,
+        until,
+        bucket_seconds,
+        limit,
+        text,
+        lang,
+    )
+
     chart_df = df.sort_values("timestamp").set_index("timestamp")
 
     for group in CHART_GROUPS:
@@ -4226,14 +4255,11 @@ def render_dashboard_body(
                         fixed_time_axis,
                     )
 
-    fault_events_df = None
     st.subheader(text["fault_events"])
     st.caption(text["fault_events_caption"])
-    try:
-        fault_events_df = read_fault_events(source, since, until, limit=200)
-    except Exception as e:
-        st.warning(str(e))
-    else:
+    if fault_events_error is not None:
+        st.warning(str(fault_events_error))
+    elif fault_events_df is not None:
         render_fault_events_table(st, fault_events_df, text, lang, display_timezone)
 
     st.subheader(text["latest_rows"])
@@ -4258,20 +4284,6 @@ def render_dashboard_body(
         unsafe_allow_html=True,
     )
 
-    render_ai_analysis(
-        st,
-        df,
-        daily_generation_df,
-        fault_events_df,
-        source,
-        since,
-        until,
-        bucket_seconds,
-        limit,
-        text,
-        lang,
-    )
-
 
 def render_ai_analysis(
     st: Any,
@@ -4289,6 +4301,14 @@ def render_ai_analysis(
     """Render manual analysis and retain its snapshot through automatic refreshes."""
     st.subheader(text["ai_title"])
     st.caption(text["ai_caption"])
+    models = list(ANALYSIS_MODELS)
+    with st.columns([1, 3])[0]:
+        model = st.selectbox(
+            text["ai_model"],
+            models,
+            index=models.index(DEFAULT_ANALYSIS_MODEL),
+            key="dashboard_ai_model",
+        )
     scope = (source, since.isoformat(), until.isoformat(), bucket_seconds, lang)
     saved = st.session_state.get("dashboard_ai_result")
     if saved and saved["scope"] != scope:
@@ -4334,7 +4354,9 @@ def render_ai_analysis(
                     daily_df,
                     events,
                 )
-                result = request_analysis(summary, lang)
+                result = request_analysis(summary, lang, model=model)
+            except AnalysisError as error:
+                st.error(f"{text['ai_error']}: {error}")
             except (RuntimeError, ValueError):
                 st.error(
                     f"{text['ai_error']}: "
@@ -4348,12 +4370,14 @@ def render_ai_analysis(
                 saved = {
                     "scope": scope,
                     "result": result,
+                    "model": model,
                     "at": datetime.now(timezone.utc).isoformat(),
                     "range": summary["loaded_range"],
                 }
                 st.session_state["dashboard_ai_result"] = saved
     if saved:
         st.caption(
+            f"{text['ai_model']}: {saved.get('model', '—')} · "
             f"{text['ai_snapshot']}: {saved['at']} / "
             f"{saved['range']['since']} ~ {saved['range']['until']}"
         )

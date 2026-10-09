@@ -9,6 +9,25 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+DEFAULT_ANALYSIS_MODEL = "gpt-4.1-mini"
+ANALYSIS_MODELS = (
+    DEFAULT_ANALYSIS_MODEL,
+    "gpt-4.1",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    "gpt-5.6-sol",
+    "gpt-6-luna",
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+)
+
+
+class AnalysisError(RuntimeError):
+    """An analysis failure with a safe message for display in the dashboard."""
+
 
 def build_analysis_summary(
     df: pd.DataFrame,
@@ -73,14 +92,14 @@ def build_analysis_summary(
     }
 
 
-def request_analysis(summary: dict[str, Any], lang: str) -> str:
+def request_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
     """Request a bounded response; never include provider error bodies in errors."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not configured.")
+        raise AnalysisError("OPENAI_API_KEY is not configured.")
     language = "Korean" if lang == "ko" else "English"
     payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini",
+        "model": model,
         "store": False,
         "max_output_tokens": 1600,
         "instructions": (
@@ -97,6 +116,10 @@ def request_analysis(summary: dict[str, Any], lang: str) -> str:
         ),
         "input": json.dumps(summary, ensure_ascii=False, allow_nan=False),
     }
+    if payload["model"] == "gpt-5-mini" or payload["model"].startswith("gpt-5-mini-"):
+        # Reasoning shares the output budget, leaving 1600 tokens too restrictive.
+        payload["reasoning"] = {"effort": "low"}
+        payload["max_output_tokens"] = 8000
     request = Request(
         "https://api.openai.com/v1/responses",
         data=json.dumps(payload).encode("utf-8"),
@@ -110,13 +133,20 @@ def request_analysis(summary: dict[str, Any], lang: str) -> str:
         with urlopen(request, timeout=60) as response:
             result = json.load(response)
     except HTTPError as error:
-        raise RuntimeError(f"OpenAI API HTTP {error.code}.") from None
+        raise AnalysisError(f"OpenAI API HTTP {error.code}.") from None
     except (URLError, TimeoutError):
-        raise RuntimeError("OpenAI API connection failed or timed out.") from None
+        raise AnalysisError("OpenAI API connection failed or timed out.") from None
     except (ValueError, OSError):
-        raise RuntimeError("OpenAI API returned an unreadable response.") from None
+        raise AnalysisError("OpenAI API returned an unreadable response.") from None
+    if (
+        isinstance(result, dict)
+        and result.get("status") == "incomplete"
+        and (result.get("incomplete_details") or {}).get("reason")
+        == "max_output_tokens"
+    ):
+        raise AnalysisError("OpenAI analysis reached the output token limit.")
     if not isinstance(result, dict) or result.get("status") != "completed":
-        raise RuntimeError("OpenAI API did not complete the analysis.")
+        raise AnalysisError("OpenAI API did not complete the analysis.")
     output = "\n".join(
         part["text"]
         for item in result.get("output", [])
@@ -125,5 +155,5 @@ def request_analysis(summary: dict[str, Any], lang: str) -> str:
         if part.get("type") == "output_text" and isinstance(part.get("text"), str)
     ).strip()
     if not output:
-        raise RuntimeError("OpenAI API returned no analysis text.")
+        raise AnalysisError("OpenAI API returned no analysis text.")
     return output

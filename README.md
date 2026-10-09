@@ -1140,7 +1140,10 @@ Errors are also printed as JSON:
 
 Set `OPENAI_API_KEY` in the server environment or the ignored local
 `solar-rs485-monitor.conf`, then restart the dashboard. Never commit a real key.
-`OPENAI_MODEL` defaults to `gpt-4.1-mini`; local config overrides environment values.
+Choose the model in the web dropdown (default: `gpt-4.1-mini`) in the AI section,
+between Latest Metrics and Total Generation, then click the analysis button.
+Selection persists in the session and does not trigger an API call. Existing
+results retain the model used for that analysis.
 
 Click **Analyze current data** to send loaded aggregate statistics, up to 48 time
 samples, the latest 90 loaded daily generation values and up to 200 labeled events
