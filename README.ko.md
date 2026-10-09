@@ -1134,3 +1134,25 @@ GOOGLE_CLIENT_EMAIL="service-account@your-project-id.iam.gserviceaccount.com"
 - `Telegram request failed`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, 대상 그룹의 봇 권한, `api.telegram.org`로의 네트워크 접근을 확인합니다.
 - `Google Sheet not found or access denied`: 스프레드시트를 `GOOGLE_CLIENT_EMAIL`에 공유합니다.
 - `Google worksheet header mismatch`: 워크시트 1행 헤더가 현재 스키마와 일치하는지 확인합니다.
+
+### 대시보드 AI 분석
+
+서버 환경변수 `OPENAI_API_KEY` 또는 Git에서 제외된 로컬
+`solar-rs485-monitor.conf`에 키를 설정한 뒤 대시보드를 재시작합니다.
+실제 키를 소스 코드, 설정 템플릿, Git에 넣지 마세요.
+`OPENAI_MODEL` 기본값은 `gpt-4.1-mini`입니다.
+설정 파일 값이 서버 환경변수보다 우선합니다.
+
+본문의 **현재 데이터 AI 분석** 버튼을 누르면 로드된 집계 데이터의 통계,
+최대 48개 시계열 샘플, 로드된 일일 발전량의 최근 90개 값,
+최대 200개 이벤트의 코드·설명을 OpenAI로 전송합니다.
+원시 통신 프레임, DB 접속 정보, API 키는 분석 입력에 포함하지 않습니다.
+API 사용료가 발생하며 서버에서 OpenAI로 연결할 수 있어야 합니다.
+응답 저장은 API 요청의 `store=false`로 비활성화합니다.
+
+결과는 분석 시각과 측정 범위를 표시하며 자동 새로고침으로 다시 호출하지
+않습니다. 기간·집계 간격·언어·소스를 변경하면 이전 결과를 지웁니다.
+새 데이터에 대한 분석은 버튼을 다시 눌러 실행합니다.
+분석은 현재 로드된 데이터에 한정됩니다. 집계·조회 제한·누락 및 발전량과
+측정값의 기간 차이를 고려해야 하며, 날씨·일사량·설비 정격 정보가 없는
+원인 추정은 현장 점검을 대체하지 않습니다.

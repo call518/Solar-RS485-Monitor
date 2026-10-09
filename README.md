@@ -1135,3 +1135,20 @@ Errors are also printed as JSON:
 - `Telegram request failed`: check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, bot permissions in the target group, and outbound network access to `api.telegram.org`.
 - `Google Sheet not found or access denied`: share the spreadsheet with `GOOGLE_CLIENT_EMAIL`.
 - `Google worksheet header mismatch`: check that row 1 header columns match the expected schema.
+
+### Dashboard AI analysis
+
+Set `OPENAI_API_KEY` in the server environment or the ignored local
+`solar-rs485-monitor.conf`, then restart the dashboard. Never commit a real key.
+`OPENAI_MODEL` defaults to `gpt-4.1-mini`; local config overrides environment values.
+
+Click **Analyze current data** to send loaded aggregate statistics, up to 48 time
+samples, the latest 90 loaded daily generation values and up to 200 labeled events
+to OpenAI. Raw frames and database credentials are excluded. API charges apply;
+outbound OpenAI access is required. Requests use `store=false`.
+
+Results remain in the session with their analysis time and measurement range.
+Automatic refresh does not call the API. Changing the date range, interval,
+language or source clears the previous result. Click again to analyze new data.
+Insights are advisory: aggregation, query limits, missing data and differing data
+ranges constrain conclusions. Weather, irradiance and rated capacity are absent.

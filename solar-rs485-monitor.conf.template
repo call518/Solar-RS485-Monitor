@@ -62,6 +62,10 @@ COLLECTOR_NORMAL_POWER_W_THRESHOLD="30"
 # [Collector][Optional] seconds after startup when no collector state exists yet.
 COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 
+# [Optional] on-demand AI analysis (server-side key; never commit a real key).
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-4.1-mini"
+
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
 DASHBOARD_SERVER_ADDRESS="0.0.0.0"

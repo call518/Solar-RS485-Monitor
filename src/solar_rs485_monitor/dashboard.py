@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
+from solar_rs485_monitor.ai_analysis import build_analysis_summary, request_analysis
 from solar_rs485_monitor.protocols import get_protocol
 from solar_rs485_monitor.sinks.mariadb import (
     get_mariadb_config,
@@ -174,6 +175,16 @@ UI_TEXT = {
         "active_bits": "활성 비트",
         "fault_code_label": "점검 코드 설명",
         "latest_rows": "최신 데이터 (최근 200건)",
+        "ai_title": "AI 분석 및 인사이트",
+        "ai_caption": (
+            "버튼을 누르면 로드된 측정 통계·발전량·이벤트 요약이 OpenAI로 전송됩니다. "
+            "API 사용료가 발생하며, 분석은 참고용입니다."
+        ),
+        "ai_button": "현재 데이터 AI 분석",
+        "ai_missing_key": "서버에 OPENAI_API_KEY를 설정하면 사용할 수 있습니다.",
+        "ai_loading": "현재 데이터를 분석하고 있습니다…",
+        "ai_error": "AI 분석 실패",
+        "ai_snapshot": "분석 시각 / 분석한 측정 범위",
     },
     "en": {
         "language": "Language",
@@ -235,6 +246,16 @@ UI_TEXT = {
         "active_bits": "Active bits",
         "fault_code_label": "Fault code detail",
         "latest_rows": "Latest Rows (Recent 200)",
+        "ai_title": "AI Analysis and Insights",
+        "ai_caption": (
+            "Click to send loaded measurement statistics, generation and event "
+            "summaries to OpenAI. API charges apply. Insights are advisory."
+        ),
+        "ai_button": "Analyze current data",
+        "ai_missing_key": "Configure OPENAI_API_KEY on the server to enable analysis.",
+        "ai_loading": "Analyzing current data…",
+        "ai_error": "AI analysis failed",
+        "ai_snapshot": "Analysis time / analyzed measurement range",
     },
 }
 
@@ -1235,6 +1256,7 @@ def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str])
 
 
 def clear_dashboard_auth_session(st) -> None:
+    st.session_state.pop("dashboard_ai_result", None)
     st.session_state.pop(DASHBOARD_AUTH_SESSION_KEY, None)
     st.session_state.pop(DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY, None)
 
@@ -4204,6 +4226,7 @@ def render_dashboard_body(
                         fixed_time_axis,
                     )
 
+    fault_events_df = None
     st.subheader(text["fault_events"])
     st.caption(text["fault_events_caption"])
     try:
@@ -4234,6 +4257,107 @@ def render_dashboard_body(
         ),
         unsafe_allow_html=True,
     )
+
+    render_ai_analysis(
+        st,
+        df,
+        daily_generation_df,
+        fault_events_df,
+        source,
+        since,
+        until,
+        bucket_seconds,
+        limit,
+        text,
+        lang,
+    )
+
+
+def render_ai_analysis(
+    st: Any,
+    df: Any,
+    daily_df: Any,
+    events_df: Any,
+    source: str,
+    since: datetime,
+    until: datetime,
+    bucket_seconds: int,
+    limit: int,
+    text: dict[str, str],
+    lang: str,
+) -> None:
+    """Render manual analysis and retain its snapshot through automatic refreshes."""
+    st.subheader(text["ai_title"])
+    st.caption(text["ai_caption"])
+    scope = (source, since.isoformat(), until.isoformat(), bucket_seconds, lang)
+    saved = st.session_state.get("dashboard_ai_result")
+    if saved and saved["scope"] != scope:
+        st.session_state.pop("dashboard_ai_result", None)
+        saved = None
+    configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    if not configured:
+        st.info(text["ai_missing_key"])
+    if st.button(text["ai_button"], disabled=not configured, key="dashboard_ai_button"):
+        events = None
+        if events_df is not None:
+            events = [
+                {
+                    "timestamp": str(row["timestamp"]),
+                    "code": format_fault_event_code(
+                        row["fault_code"],
+                        extract_virtual_event(row.get("raw_frame_hex")),
+                    ),
+                    "label": (
+                        "STANDBY: low_output_power"
+                        if is_power_standby_event(
+                            row["fault_code"],
+                            extract_virtual_event(row.get("raw_frame_hex")),
+                            row.get("output_ac_power_w"),
+                        )
+                        else format_fault_event_label(
+                            row["fault_code"],
+                            extract_virtual_event(row.get("raw_frame_hex")),
+                        )
+                    ),
+                }
+                for _, row in events_df.sort_values("timestamp").tail(200).iterrows()
+            ]
+        with st.spinner(text["ai_loading"]):
+            try:
+                summary = build_analysis_summary(
+                    df,
+                    list(METRICS),
+                    since,
+                    until,
+                    bucket_seconds,
+                    limit,
+                    daily_df,
+                    events,
+                )
+                result = request_analysis(summary, lang)
+            except (RuntimeError, ValueError):
+                st.error(
+                    f"{text['ai_error']}: "
+                    + (
+                        "키·모델·사용 한도·네트워크를 확인하세요."
+                        if lang == "ko"
+                        else "Check the API key, model, usage limits and network."
+                    )
+                )
+            else:
+                saved = {
+                    "scope": scope,
+                    "result": result,
+                    "at": datetime.now(timezone.utc).isoformat(),
+                    "range": summary["loaded_range"],
+                }
+                st.session_state["dashboard_ai_result"] = saved
+    if saved:
+        st.caption(
+            f"{text['ai_snapshot']}: {saved['at']} / "
+            f"{saved['range']['since']} ~ {saved['range']['until']}"
+        )
+        st.markdown(saved["result"])
 
 
 def run_app() -> None:
