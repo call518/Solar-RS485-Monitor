@@ -83,7 +83,7 @@ DASHBOARD_RUN_ON_SAVE="false"
 # [Optional] Default auto-refresh selection in dashboard sidebar.
 # [Optional] Supported values: 0, 60, 120, 300, 600
 # [Optional] Values between 1 and 59 are clamped to 60.
-DASHBOARD_AUTO_REFRESH_SECONDS="60"
+DASHBOARD_AUTO_REFRESH_SECONDS="600"
 # [Optional] Maximum number of aggregated points queried for dashboard charts.
 # [Optional] Dashboard UI does not expose this value; set it in config only.
 # [Optional] Allowed range: 100..300000
