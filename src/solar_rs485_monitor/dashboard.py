@@ -40,6 +40,12 @@ from solar_rs485_monitor.sinks.sqlite import (
     require_identifier as require_sqlite_identifier,
 )
 from solar_rs485_monitor.version import get_version
+from solar_rs485_monitor.solar_weather import (
+    WeatherError,
+    get_solar_coordinates,
+    get_weather_dates,
+    read_daily_solar_weather,
+)
 
 
 CONFIG_FILENAME = "solar-rs485-monitor.conf"
@@ -183,6 +189,17 @@ UI_TEXT = {
         "latest_rows": "최신 데이터 (최근 200건)",
         "ai_title": "AI 분석 및 인사이트",
         "ai_model": "모델",
+        "solar_weather_title": "일일 일사량 및 일조시간",
+        "solar_radiation": "일사량",
+        "solar_sunshine": "일조시간",
+        "solar_weather_caption": (
+            "{start} ~ {end} · 좌측: 일사량(kWh/m²/day), 우측: 일조시간(h/day). "
+            "오늘 제외 · 수평면 기준 기상 모델 추정값 · 누락값은 빈칸으로 표시합니다."
+        ),
+        "solar_weather_location": "설비 좌표: {latitude}, {longitude}",
+        "solar_weather_missing_location": "SOLAR_LATITUDE와 SOLAR_LONGITUDE를 설정하세요.",
+        "solar_weather_empty": "표시할 완료된 날짜의 기상 데이터가 없습니다.",
+        "solar_weather_error": "기상 데이터 조회 실패",
         "ai_caption": (
             "버튼을 누르면 로드된 측정 통계·발전량·이벤트 요약이 OpenAI로 전송됩니다. "
             "API 사용료가 발생하며, 분석은 참고용입니다."
@@ -255,6 +272,18 @@ UI_TEXT = {
         "latest_rows": "Latest Rows (Recent 200)",
         "ai_title": "AI Analysis and Insights",
         "ai_model": "Model",
+        "solar_weather_title": "Daily Solar Radiation and Sunshine Duration",
+        "solar_radiation": "Solar radiation",
+        "solar_sunshine": "Sunshine duration",
+        "solar_weather_caption": (
+            "{start} to {end} · Left: radiation (kWh/m²/day), right: sunshine (h/day). "
+            "Today excluded · Horizontal-surface weather model estimates · "
+            "Missing values are shown as gaps."
+        ),
+        "solar_weather_location": "Installation coordinates: {latitude}, {longitude}",
+        "solar_weather_missing_location": "Configure SOLAR_LATITUDE and SOLAR_LONGITUDE.",
+        "solar_weather_empty": "No weather data available for completed days.",
+        "solar_weather_error": "Weather data request failed",
         "ai_caption": (
             "Click to send loaded measurement statistics, generation and event "
             "summaries to OpenAI. API charges apply. Insights are advisory."
@@ -4038,6 +4067,9 @@ def render_dashboard_body(
                 )
 
             if metric_name == "total_generation_kwh":
+                render_solar_weather_chart(
+                    st, total_generation_since, display_until, text, display_timezone
+                )
                 if daily_generation_error is not None:
                     st.warning(str(daily_generation_error))
                 else:
@@ -4282,6 +4314,100 @@ def render_dashboard_body(
             display_timezone,
         ),
         unsafe_allow_html=True,
+    )
+
+
+def render_solar_weather_chart(
+    st: Any,
+    since: datetime,
+    until: datetime,
+    text: dict[str, str],
+    display_timezone: ZoneInfo,
+) -> None:
+    """Show daily weather after cumulative generation with two distinct unit axes."""
+    from streamlit_echarts import st_echarts
+
+    st.markdown(f"#### {text['solar_weather_title']}")
+    try:
+        coordinates = get_solar_coordinates()
+        if coordinates is None:
+            st.info(text["solar_weather_missing_location"])
+            return
+        dates = get_weather_dates(
+            since, until, display_timezone, datetime.now(display_timezone).date()
+        )
+        if dates is None:
+            st.caption(text["solar_weather_empty"])
+            return
+        start, end = dates
+        rows = read_daily_solar_weather(*coordinates, start, end, str(display_timezone))
+    except WeatherError as error:
+        st.warning(f"{text['solar_weather_error']}: {error}")
+        return
+    st.caption(text["solar_weather_caption"].format(start=start, end=end))
+    st.caption(
+        text["solar_weather_location"].format(
+            latitude=coordinates[0], longitude=coordinates[1]
+        )
+    )
+    st.caption(
+        "Source: [Open-Meteo](https://open-meteo.com/) · "
+        "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)"
+    )
+    if not any(
+        row["radiation_kwh_m2"] is not None or row["sunshine_hours"] is not None
+        for row in rows
+    ):
+        st.caption(text["solar_weather_empty"])
+        return
+    options = {
+        "animation": False,
+        "grid": {"left": 70, "right": 70, "top": 55, "bottom": 76},
+        "legend": {"top": 0},
+        "tooltip": {"trigger": "axis"},
+        "xAxis": {
+            "type": "category",
+            "data": [row["date"] for row in rows],
+            "axisLabel": {"hideOverlap": True},
+        },
+        "yAxis": [
+            {"type": "value", "name": "kWh/m²/day", "position": "left", "min": 0},
+            {
+                "type": "value",
+                "name": "h/day",
+                "position": "right",
+                "min": 0,
+                "max": 24,
+                "splitLine": {"show": False},
+            },
+        ],
+        "dataZoom": build_chart_data_zoom(),
+        "series": [
+            {
+                "name": text["solar_radiation"],
+                "type": "bar",
+                "yAxisIndex": 0,
+                "itemStyle": {"color": "#f59e0b"},
+                "data": [row["radiation_kwh_m2"] for row in rows],
+            },
+            {
+                "name": text["solar_sunshine"],
+                "type": "line",
+                "yAxisIndex": 1,
+                "connectNulls": False,
+                "symbolSize": 5,
+                "lineStyle": {"width": 2, "color": "#3b82f6"},
+                "itemStyle": {"color": "#3b82f6"},
+                "data": [row["sunshine_hours"] for row in rows],
+            },
+        ],
+    }
+    st_echarts(
+        options=options,
+        height="320px",
+        renderer="svg",
+        replace_merge=["series"],
+        key=f"echart_solar_weather_{coordinates}_{start}_{end}",
     )
 
 

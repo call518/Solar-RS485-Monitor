@@ -1160,3 +1160,29 @@ Automatic refresh does not call the API. Changing the date range, interval,
 language or source clears the previous result. Click again to analyze new data.
 Insights are advisory: aggregation, query limits, missing data and differing data
 ranges constrain conclusions. Weather, irradiance and rated capacity are absent.
+
+### Solar radiation and sunshine duration
+
+Set `SOLAR_LATITUDE` and `SOLAR_LONGITUDE` in `solar-rs485-monitor.conf` to the
+installation's fixed coordinates. Latitude must be between -90 and 90; longitude
+between -180 and 180. Blank coordinates disable weather requests. Visitor IP
+addresses are not used.
+
+A daily chart appears immediately after Total Generation: radiation bars on the
+left axis (kWh/m²/day) and sunshine duration on the right axis (h/day). It follows
+the cumulative chart's date range but excludes today in `TIMEZONE`. The
+Open-Meteo Historical Weather API provides `shortwave_radiation_sum` (MJ/m²,
+divided by 3.6) and `sunshine_duration` (seconds, divided by 3600). Sunshine
+duration differs from sunrise-to-sunset daylight duration.
+
+Responses are cached for one hour per location, date range and timezone. Missing
+values remain gaps rather than zeros, and failures appear only in the weather
+section. Recent data availability depends on model updates. These are modeled
+horizontal-surface estimates, not on-site measurements or panel-plane radiation.
+The axes have different units; bar and line heights are not directly comparable.
+Weather data is not currently included in AI analysis inputs.
+
+Source: [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api),
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The free API is for
+non-commercial use; check [licensing](https://open-meteo.com/en/pricing) for
+commercial operation.
