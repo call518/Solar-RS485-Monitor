@@ -64,6 +64,16 @@ COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 
 # [Optional] on-demand AI analysis (server-side key; never commit a real key).
 OPENAI_API_KEY=""
+# [Optional] OPENAI_MODEL defaults to gpt-4.1-mini when unset or blank.
+# Text-analysis model examples (OpenAI docs checked 2026-10-09).
+# gpt-4.1-mini: current default; smaller, faster non-reasoning model.
+# gpt-4.1: larger non-reasoning model.
+# gpt-6-luna: efficient model for focused, high-volume tasks.
+# gpt-6.1-sol: balance of capability and cost for complex tasks.
+# gpt-6-astra: flagship model for demanding reasoning tasks.
+# This is not a complete list; availability depends on your API project.
+# Reasoning models may need more than the current 1600 output tokens / 60s timeout.
+# Model catalog: https://developers.openai.com/api/docs/models
 OPENAI_MODEL="gpt-4.1-mini"
 
 # [Optional] Streamlit dashboard title and server defaults.
