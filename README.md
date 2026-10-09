@@ -1145,6 +1145,11 @@ between Latest Metrics and Total Generation, then click the analysis button.
 Selection persists in the session and does not trigger an API call. Existing
 results retain the model used for that analysis.
 
+`OPENAI_MAX_OUTPUT_TOKENS` sets the shared output-token budget for all models,
+including internal reasoning tokens. Set a positive integer in the config or
+server environment; unset or blank values default to `8192`. Increase it when
+the analysis reaches the token limit. Reasoning effort uses the API default.
+
 Click **Analyze current data** to send loaded aggregate statistics, up to 48 time
 samples, the latest 90 loaded daily generation values and up to 200 labeled events
 to OpenAI. Raw frames and database credentials are excluded. API charges apply;

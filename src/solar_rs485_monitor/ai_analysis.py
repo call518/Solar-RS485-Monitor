@@ -97,11 +97,21 @@ def request_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise AnalysisError("OPENAI_API_KEY is not configured.")
+    try:
+        max_output_tokens = int(
+            os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "8192").strip() or "8192"
+        )
+    except ValueError:
+        raise AnalysisError(
+            "OPENAI_MAX_OUTPUT_TOKENS must be a positive integer."
+        ) from None
+    if max_output_tokens <= 0:
+        raise AnalysisError("OPENAI_MAX_OUTPUT_TOKENS must be a positive integer.")
     language = "Korean" if lang == "ko" else "English"
     payload = {
         "model": model,
         "store": False,
-        "max_output_tokens": 1600,
+        "max_output_tokens": max_output_tokens,
         "instructions": (
             f"Analyze solar inverter evidence in {language}. Give a concise summary, "
             "observed trends/anomalies with numbers and timestamps, suggested checks, "
@@ -116,10 +126,6 @@ def request_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
         ),
         "input": json.dumps(summary, ensure_ascii=False, allow_nan=False),
     }
-    if payload["model"] == "gpt-5-mini" or payload["model"].startswith("gpt-5-mini-"):
-        # Reasoning shares the output budget, leaving 1600 tokens too restrictive.
-        payload["reasoning"] = {"effort": "low"}
-        payload["max_output_tokens"] = 8000
     request = Request(
         "https://api.openai.com/v1/responses",
         data=json.dumps(payload).encode("utf-8"),
@@ -144,7 +150,14 @@ def request_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
         and (result.get("incomplete_details") or {}).get("reason")
         == "max_output_tokens"
     ):
-        raise AnalysisError("OpenAI analysis reached the output token limit.")
+        raise AnalysisError(
+            f"출력 토큰 한도({max_output_tokens}, 내부 추론 포함)에 도달해 "
+            "분석을 완료하지 못했습니다. OPENAI_MAX_OUTPUT_TOKENS를 늘려주세요."
+            if lang == "ko"
+            else f"Analysis incomplete: output token limit reached "
+            f"({max_output_tokens}, including reasoning). "
+            "Increase OPENAI_MAX_OUTPUT_TOKENS."
+        )
     if not isinstance(result, dict) or result.get("status") != "completed":
         raise AnalysisError("OpenAI API did not complete the analysis.")
     output = "\n".join(

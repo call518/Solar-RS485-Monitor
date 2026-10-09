@@ -226,13 +226,27 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     assert len(calls) == 1
 
 
-def test_gpt5_mini_has_budget_for_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("model", ai_analysis.ANALYSIS_MODELS)
+@pytest.mark.parametrize(
+    "configured, expected", [(None, 8192), ("", 8192), ("12000", 12000)]
+)
+def test_models_share_configured_token_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    configured: str | None,
+    expected: int,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    if configured is None:
+        monkeypatch.delenv("OPENAI_MAX_OUTPUT_TOKENS", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", configured)
 
     def handle_request(request: Any, timeout: int) -> Any:
         payload = json.loads(request.data)
-        assert payload["reasoning"] == {"effort": "low"}
-        assert payload["max_output_tokens"] == 8000
+        assert "reasoning" not in payload
+        assert payload["max_output_tokens"] == expected
+        assert payload["model"] == model
         return nullcontext(
             StringIO(
                 json.dumps(
@@ -252,13 +266,19 @@ def test_gpt5_mini_has_budget_for_reasoning(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr(ai_analysis, "urlopen", handle_request)
-    assert ai_analysis.request_analysis({}, "en", model="gpt-5-mini") == "insights"
+    assert ai_analysis.request_analysis({}, "en", model=model) == "insights"
 
 
+@pytest.mark.parametrize(
+    "lang, message", [("en", "output token limit"), ("ko", "출력 토큰 한도")]
+)
 def test_token_exhaustion_reports_specific_cause(
     monkeypatch: pytest.MonkeyPatch,
+    lang: str,
+    message: str,
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "12288")
     monkeypatch.setattr(
         ai_analysis,
         "urlopen",
@@ -274,8 +294,10 @@ def test_token_exhaustion_reports_specific_cause(
             )
         ),
     )
-    with pytest.raises(RuntimeError, match="output token limit"):
-        ai_analysis.request_analysis({}, "en", model="gpt-4.1-mini")
+    with pytest.raises(ai_analysis.AnalysisError, match=message) as caught:
+        ai_analysis.request_analysis({}, lang, model="gpt-4.1-mini")
+    assert "12288" in str(caught.value)
+    assert "OPENAI_MAX_OUTPUT_TOKENS" in str(caught.value)
 
 
 def test_explicit_model_is_sent_to_api(
@@ -286,7 +308,7 @@ def test_explicit_model_is_sent_to_api(
     def handle_request(request: Any, timeout: int) -> Any:
         payload = json.loads(request.data)
         assert payload["model"] == "gpt-5-mini"
-        assert payload["reasoning"] == {"effort": "low"}
+        assert "reasoning" not in payload
         return nullcontext(
             StringIO(
                 json.dumps(
@@ -348,3 +370,43 @@ render_ai_analysis(st, df, None, None, "MariaDB", since, since,
     app.button[0].click().run()
     assert not app.exception
     assert calls == ["gpt-5-mini", "gpt-4.1"]
+
+    monkeypatch.setattr(dashboard, "request_analysis", ai_analysis.request_analysis)
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "8192")
+    monkeypatch.setattr(
+        ai_analysis,
+        "urlopen",
+        lambda *args, **kwargs: nullcontext(
+            StringIO(
+                json.dumps(
+                    {
+                        "status": "incomplete",
+                        "incomplete_details": {"reason": "max_output_tokens"},
+                        "output": [],
+                    }
+                )
+            )
+        ),
+    )
+    app.button[0].click().run()
+    assert not app.exception
+    assert "output token limit" in app.error[0].value
+    assert "8192" in app.error[0].value
+    assert "OPENAI_MAX_OUTPUT_TOKENS" in app.error[0].value
+    assert "Check the API key" not in app.error[0].value
+
+
+@pytest.mark.parametrize("configured", ["invalid", "0", "-1", "1.5"])
+def test_invalid_token_budget_does_not_call_api(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", configured)
+
+    def handle_unexpected_request(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Invalid configuration must not call the API")
+
+    monkeypatch.setattr(ai_analysis, "urlopen", handle_unexpected_request)
+    with pytest.raises(ai_analysis.AnalysisError, match="positive integer"):
+        ai_analysis.request_analysis({}, "en", model="gpt-5-mini")

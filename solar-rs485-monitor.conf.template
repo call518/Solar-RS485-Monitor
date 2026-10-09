@@ -64,6 +64,9 @@ COLLECTOR_UNKNOWN_STATE_NO_RESPONSE_SUPPRESS_SECONDS="43200"
 
 # [Optional] on-demand AI analysis (server-side key; never commit a real key).
 OPENAI_API_KEY=""
+# [Optional] Output-token budget shared by all analysis models, including reasoning.
+# Defaults to 8192 when unset or blank; must be a positive integer.
+OPENAI_MAX_OUTPUT_TOKENS="8192"
 
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"
