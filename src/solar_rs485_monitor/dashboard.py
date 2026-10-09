@@ -26,6 +26,7 @@ from solar_rs485_monitor.ai_analysis import (
     DEFAULT_ANALYSIS_MODEL,
     AnalysisError,
     build_analysis_summary,
+    build_weather_evidence,
     get_default_analysis_prompt,
     request_analysis,
 )
@@ -4520,6 +4521,9 @@ def render_ai_analysis(
                     limit,
                     daily_df,
                     events,
+                )
+                summary["solar_weather"] = build_weather_evidence(
+                    since, until, get_timezone()
                 )
                 result = request_analysis(summary, lang, model=model, prompt=prompt)
             except AnalysisError as error:

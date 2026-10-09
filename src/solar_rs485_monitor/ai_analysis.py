@@ -2,12 +2,15 @@
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+from solar_rs485_monitor import solar_weather
 
 DEFAULT_ANALYSIS_MODEL = "gpt-4.1-mini"
 ANALYSIS_MODELS = (
@@ -27,6 +30,41 @@ ANALYSIS_MODELS = (
 
 class AnalysisError(RuntimeError):
     """An analysis failure with a safe message for display in the dashboard."""
+
+
+def build_weather_evidence(
+    since: datetime, until: datetime, display_timezone: ZoneInfo
+) -> dict[str, Any]:
+    """Load bounded daily weather, retaining unavailable evidence as a limitation."""
+    evidence: dict[str, Any] = {
+        "source": "Open-Meteo historical weather model estimates",
+        "timezone": str(display_timezone),
+        "radiation_basis": "horizontal surface, not measured panel irradiance",
+        "units": {"radiation_kwh_m2": "kWh/m²/day", "sunshine_hours": "h/day"},
+        "today_excluded": True,
+        "day_limit": 90,
+        "daily": [],
+    }
+    try:
+        coordinates = solar_weather.get_solar_coordinates()
+        if coordinates is None:
+            evidence["unavailable_reason"] = "Installation coordinates not configured."
+            return evidence
+        dates = solar_weather.get_weather_dates(
+            since, until, display_timezone, datetime.now(display_timezone).date()
+        )
+        if dates is None:
+            evidence["unavailable_reason"] = "No completed days in requested range."
+            return evidence
+        start, end = dates
+        start = max(start, end - timedelta(days=89))
+        evidence["range"] = {"since": start.isoformat(), "until": end.isoformat()}
+        evidence["daily"] = solar_weather.read_daily_solar_weather(
+            *coordinates, start, end, str(display_timezone)
+        )
+    except solar_weather.WeatherError as error:
+        evidence["unavailable_reason"] = str(error)
+    return evidence
 
 
 def build_analysis_summary(
@@ -103,8 +141,13 @@ def get_default_analysis_prompt(lang: str) -> str:
         "Time samples and daily generation are limited; daily data can cover a "
         "different range. Fault codes are bitmasks, not numeric severity. "
         "Events may include standby and collector errors; do not call all faults. "
-        "No weather, irradiance or rated capacity is provided: do not assert "
-        "root causes, efficiency, forecasts, or that nighttime standby is a fault. "
+        "When solar_weather has daily evidence, compare generation with radiation "
+        "and sunshine duration on matching local dates to assess variation. "
+        "Weather is horizontal-surface model estimates, not panel measurements; "
+        "today is excluded and nulls are missing, not zero. Explain unavailable "
+        "weather or mismatched ranges. Rated capacity is not provided: do not "
+        "assert root causes, efficiency, forecasts, or that nighttime standby "
+        "is a fault. "
         "Distinguish observations from hypotheses. Never invent missing evidence."
     )
 

@@ -1,14 +1,71 @@
 import json
 from contextlib import nullcontext
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import StringIO
 from typing import Any
 from urllib.error import HTTPError, URLError
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
 from solar_rs485_monitor import ai_analysis
+
+
+def test_weather_evidence_is_bounded_and_preserves_missing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    weather = ai_analysis.solar_weather
+    monkeypatch.setattr(weather, "get_solar_coordinates", lambda: (35.0, 127.0))
+    rows = [
+        {"date": "2026-01-01", "radiation_kwh_m2": 0, "sunshine_hours": None}
+    ]
+
+    def handle_weather(
+        latitude: float, longitude: float, start: date, end: date, zone: str
+    ) -> list[dict[str, Any]]:
+        assert (latitude, longitude) == (35.0, 127.0)
+        assert (start, end) == (date(2025, 10, 4), date(2026, 1, 1))
+        assert zone == "Asia/Seoul"
+        return rows
+
+    monkeypatch.setattr(weather, "read_daily_solar_weather", handle_weather)
+    evidence = ai_analysis.build_weather_evidence(
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ZoneInfo("Asia/Seoul"),
+    )
+    assert evidence["daily"] == rows
+    assert evidence["units"]["radiation_kwh_m2"] == "kWh/m²/day"
+    assert "model estimates" in evidence["source"]
+    assert "unavailable_reason" not in evidence
+    json.dumps(evidence, allow_nan=False)
+
+
+@pytest.mark.parametrize("case", ["unconfigured", "failed", "today"])
+def test_unavailable_weather_is_reported_without_aborting_analysis(
+    monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    weather = ai_analysis.solar_weather
+    monkeypatch.setattr(
+        weather,
+        "get_solar_coordinates",
+        lambda: None if case == "unconfigured" else (35, 127),
+    )
+
+    def handle_weather(*args: Any, **kwargs: Any) -> Any:
+        assert case == "failed"
+        raise weather.WeatherError("Open-Meteo connection failed or timed out.")
+
+    monkeypatch.setattr(weather, "read_daily_solar_weather", handle_weather)
+    since = (
+        datetime.now(timezone.utc)
+        if case == "today"
+        else datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
+    evidence = ai_analysis.build_weather_evidence(since, since, ZoneInfo("UTC"))
+    assert evidence["daily"] == []
+    assert evidence["unavailable_reason"]
 
 
 def test_summary_is_bounded_and_excludes_sensitive_columns() -> None:
@@ -185,17 +242,31 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
             self.messages.append(value)
 
     calls: list[dict[str, Any]] = []
+    weather_calls: list[tuple[datetime, datetime]] = []
+    weather_evidence = {
+        "daily": [
+            {"date": "2026-01-01", "radiation_kwh_m2": 5, "sunshine_hours": 6}
+        ]
+    }
+
+    def handle_weather(
+        since: datetime, until: datetime, display_timezone: ZoneInfo
+    ) -> dict[str, Any]:
+        weather_calls.append((since, until))
+        return weather_evidence
 
     def handle_analysis(
         summary: dict[str, Any], lang: str, model: str, prompt: str
     ) -> str:
         calls.append(summary)
+        assert summary["solar_weather"] == weather_evidence
         assert model == st.session_state["dashboard_ai_model"]
         assert prompt == st.session_state["dashboard_ai_prompt_en"]
         return "insights"
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
     monkeypatch.setattr(dashboard, "request_analysis", handle_analysis)
+    monkeypatch.setattr(dashboard, "build_weather_evidence", handle_weather)
     st = DashboardStub()
     since = datetime(2026, 1, 1, tzinfo=timezone.utc)
     df = pd.DataFrame({"timestamp": [since], "output_ac_power_w": [100]})
@@ -214,6 +285,7 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     )
     dashboard.render_ai_analysis(*args)
     assert len(calls) == 1
+    assert weather_calls == [(since, since)]
     assert st.session_state["dashboard_ai_result"]["result"] == "insights"
     assert st.session_state["dashboard_ai_result"]["model"] == "gpt-4.1-mini"
     assert st.session_state["dashboard_ai_model"] == "gpt-4.1-mini"
@@ -222,6 +294,7 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     dashboard.render_ai_analysis(*args)
     assert len(calls) == 1
     assert st.messages.count("insights") == 2
+    assert weather_calls == [(since, since)]
     assert st.session_state["dashboard_ai_model"] == "gpt-5-mini"
     assert st.messages[-2].startswith("Model: gpt-4.1-mini · ")
 
