@@ -68,12 +68,18 @@ OPENAI_API_KEY=""
 # Text-analysis model examples (OpenAI docs checked 2026-10-09).
 # gpt-4.1-mini: current default; smaller, faster non-reasoning model.
 # gpt-4.1: larger non-reasoning model.
+# gpt-5.6-luna: cost-sensitive, high-volume tasks (nano-tier successor).
+# gpt-5.6-terra: balance of capability and cost (mini-tier successor).
+# gpt-5.6-sol: complex professional tasks (GPT-5-tier successor).
+# Older GPT-5 examples (deprecated): gpt-5, gpt-5-mini, gpt-5-nano.
+# Their 2025-08-07 snapshots are scheduled to shut down on 2026-12-11.
 # gpt-6-luna: efficient model for focused, high-volume tasks.
 # gpt-6.1-sol: balance of capability and cost for complex tasks.
 # gpt-6-astra: flagship model for demanding reasoning tasks.
 # This is not a complete list; availability depends on your API project.
 # Reasoning models may need more than the current 1600 output tokens / 60s timeout.
 # Model catalog: https://developers.openai.com/api/docs/models
+# Deprecations: https://developers.openai.com/api/docs/deprecations
 OPENAI_MODEL="gpt-4.1-mini"
 
 # [Optional] Streamlit dashboard title and server defaults.
