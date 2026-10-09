@@ -160,8 +160,20 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
                 self.session_state[key] = options[index]
             return self.session_state[key]
 
-        def button(self, label: str, disabled: bool, key: str) -> bool:
-            return self.clicked and not disabled
+        def expander(self, label: str) -> Any:
+            return nullcontext()
+
+        def text_area(
+            self, label: str, value: str | None, height: int, key: str
+        ) -> str:
+            assert value is None
+            assert key in self.session_state
+            if key not in self.session_state:
+                self.session_state[key] = value
+            return self.session_state[key]
+
+        def button(self, label: str, disabled: bool = False, key: str = "") -> bool:
+            return self.clicked and not disabled and key == "dashboard_ai_button"
 
         def spinner(self, label: str) -> Any:
             return nullcontext()
@@ -174,9 +186,12 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
 
     calls: list[dict[str, Any]] = []
 
-    def handle_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
+    def handle_analysis(
+        summary: dict[str, Any], lang: str, model: str, prompt: str
+    ) -> str:
         calls.append(summary)
         assert model == st.session_state["dashboard_ai_model"]
+        assert prompt == st.session_state["dashboard_ai_prompt_en"]
         return "insights"
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
@@ -210,7 +225,9 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     assert st.session_state["dashboard_ai_model"] == "gpt-5-mini"
     assert st.messages[-2].startswith("Model: gpt-4.1-mini · ")
 
-    def handle_failure(summary: dict[str, Any], lang: str, model: str) -> str:
+    def handle_failure(
+        summary: dict[str, Any], lang: str, model: str, prompt: str
+    ) -> str:
         raise ai_analysis.AnalysisError(
             "OpenAI analysis reached the output token limit."
         )
@@ -334,14 +351,28 @@ def test_explicit_model_is_sent_to_api(
 def test_streamlit_model_selection_only_calls_api_on_click(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from streamlit.elements.widgets import text_widgets
     from streamlit.testing.v1 import AppTest
 
     from solar_rs485_monitor import dashboard
 
-    calls: list[str] = []
+    original_check = text_widgets.check_widget_policies
 
-    def handle_analysis(summary: dict[str, Any], lang: str, model: str) -> str:
+    def handle_widget_policies(*args: Any, **kwargs: Any) -> None:
+        if str(args[1]).startswith("dashboard_ai_prompt_"):
+            assert kwargs["default_value"] is None
+        original_check(*args, **kwargs)
+
+    monkeypatch.setattr(text_widgets, "check_widget_policies", handle_widget_policies)
+
+    calls: list[str] = []
+    prompts: list[str] = []
+
+    def handle_analysis(
+        summary: dict[str, Any], lang: str, model: str, prompt: str
+    ) -> str:
         calls.append(model)
+        prompts.append(prompt)
         return f"Analysis using {model}"
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
@@ -360,16 +391,33 @@ render_ai_analysis(st, df, None, None, "MariaDB", since, since,
     assert app.selectbox[0].value == "gpt-4.1-mini"
     app.selectbox[0].select("gpt-5-mini").run()
     assert not calls
-    app.button[0].click().run()
+    app.button(key="dashboard_ai_button").click().run()
     assert not app.exception
     assert calls == ["gpt-5-mini"]
+    assert prompts == [ai_analysis.get_default_analysis_prompt("en")]
     assert app.markdown[0].value == "Analysis using gpt-5-mini"
     app.selectbox[0].select("gpt-4.1").run()
     assert calls == ["gpt-5-mini"]
     assert any("Model: gpt-5-mini" in item.value for item in app.caption)
-    app.button[0].click().run()
+    app.button(key="dashboard_ai_button").click().run()
     assert not app.exception
     assert calls == ["gpt-5-mini", "gpt-4.1"]
+
+    app.text_area[0].input("Compare output voltage fluctuations only.").run()
+    assert len(calls) == 2
+    assert any("prompt has changed" in caption.value for caption in app.caption)
+    app.button(key="dashboard_ai_button").click().run()
+    assert not app.exception
+    assert prompts[-1] == "Compare output voltage fluctuations only."
+    assert app.session_state["dashboard_ai_result"]["prompt"] == prompts[-1]
+    app.button(key="dashboard_ai_prompt_reset").click().run()
+    assert not app.exception
+    assert app.text_area[0].value == ai_analysis.get_default_analysis_prompt("en")
+    assert len(calls) == 3
+    app.text_area[0].input("   ").run()
+    assert app.button(key="dashboard_ai_button").disabled
+    assert len(calls) == 3
+    app.button(key="dashboard_ai_prompt_reset").click().run()
 
     monkeypatch.setattr(dashboard, "request_analysis", ai_analysis.request_analysis)
     monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "8192")
@@ -388,7 +436,7 @@ render_ai_analysis(st, df, None, None, "MariaDB", since, since,
             )
         ),
     )
-    app.button[0].click().run()
+    app.button(key="dashboard_ai_button").click().run()
     assert not app.exception
     assert "output token limit" in app.error[0].value
     assert "8192" in app.error[0].value
@@ -410,3 +458,73 @@ def test_invalid_token_budget_does_not_call_api(
     monkeypatch.setattr(ai_analysis, "urlopen", handle_unexpected_request)
     with pytest.raises(ai_analysis.AnalysisError, match="positive integer"):
         ai_analysis.request_analysis({}, "en", model="gpt-5-mini")
+
+
+def test_custom_prompt_replaces_default_and_keeps_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    summary = {"loaded_rows": 10, "statistics": {"output_ac_power_w": {"mean": 500}}}
+    prompt = "발전 출력이 급격히 변한 구간만 분석해줘."
+
+    def handle_request(request: Any, timeout: int) -> Any:
+        payload = json.loads(request.data)
+        assert payload["instructions"] == prompt
+        assert json.loads(payload["input"]) == summary
+        assert (
+            ai_analysis.get_default_analysis_prompt("ko") not in payload["instructions"]
+        )
+        return nullcontext(
+            StringIO(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "output": [
+                            {
+                                "type": "message",
+                                "content": [
+                                    {"type": "output_text", "text": "분석 결과"},
+                                ],
+                            }
+                        ],
+                    }
+                )
+            )
+        )
+
+    monkeypatch.setattr(ai_analysis, "urlopen", handle_request)
+    assert (
+        ai_analysis.request_analysis(summary, "ko", "gpt-4.1-mini", prompt)
+        == "분석 결과"
+    )
+
+
+@pytest.mark.parametrize("prompt", ["", "   "])
+def test_empty_prompt_does_not_call_api(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: str,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+
+    def handle_unexpected_request(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Empty prompt must not call the API")
+
+    monkeypatch.setattr(ai_analysis, "urlopen", handle_unexpected_request)
+    with pytest.raises(ai_analysis.AnalysisError, match="Enter an analysis prompt"):
+        ai_analysis.request_analysis({}, "en", "gpt-4.1-mini", prompt)
+
+
+def test_logout_clears_custom_prompts() -> None:
+    from types import SimpleNamespace
+
+    from solar_rs485_monitor import dashboard
+
+    st = SimpleNamespace(
+        session_state={
+            "dashboard_ai_prompt_ko": "사용자 질문",
+            "dashboard_ai_prompt_en": "Custom question",
+            "dashboard_ai_result": {"prompt": "Custom question"},
+        }
+    )
+    dashboard.clear_dashboard_auth_session(st)
+    assert not st.session_state

@@ -1145,6 +1145,13 @@ between Latest Metrics and Total Generation, then click the analysis button.
 Selection persists in the session and does not trigger an API call. Existing
 results retain the model used for that analysis.
 
+Expand **Analysis prompt** to edit the existing default instructions or replace
+them with your own question. Clicking Analyze sends the edited prompt and the
+current data summary. Editing alone does not call the API, and blank prompts
+disable analysis. **Restore default prompt** resets the editor. Edits persist
+per language in the session and are cleared on logout. After editing a prompt,
+the previous result is labeled as using the previous prompt.
+
 `OPENAI_MAX_OUTPUT_TOKENS` sets the shared output-token budget for all models,
 including internal reasoning tokens. Set a positive integer in the config or
 server environment; unset or blank values default to `8192`. Increase it when

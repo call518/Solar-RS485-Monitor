@@ -26,6 +26,7 @@ from solar_rs485_monitor.ai_analysis import (
     DEFAULT_ANALYSIS_MODEL,
     AnalysisError,
     build_analysis_summary,
+    get_default_analysis_prompt,
     request_analysis,
 )
 from solar_rs485_monitor.protocols import get_protocol
@@ -189,6 +190,17 @@ UI_TEXT = {
         "latest_rows": "최신 데이터 (최근 200건)",
         "ai_title": "AI 분석 및 인사이트",
         "ai_model": "모델",
+        "ai_prompt": "분석 프롬프트",
+        "ai_prompt_reset": "기본 프롬프트로 되돌리기",
+        "ai_prompt_help": (
+            "기본 내용을 수정하거나 원하는 질문으로 대체하세요. "
+            "분석 버튼을 누를 때 현재 데이터 요약과 함께 전송합니다."
+        ),
+        "ai_prompt_empty": "분석할 질문이나 프롬프트를 입력하세요.",
+        "ai_prompt_changed": (
+            "현재 프롬프트가 변경되었습니다. "
+            "아래 결과는 이전 프롬프트로 분석한 결과입니다."
+        ),
         "solar_weather_title": "일일 일사량 및 일조시간",
         "solar_radiation": "일사량",
         "solar_sunshine": "일조시간",
@@ -272,6 +284,16 @@ UI_TEXT = {
         "latest_rows": "Latest Rows (Recent 200)",
         "ai_title": "AI Analysis and Insights",
         "ai_model": "Model",
+        "ai_prompt": "Analysis prompt",
+        "ai_prompt_reset": "Restore default prompt",
+        "ai_prompt_help": (
+            "Edit the default instructions or replace them with your question. "
+            "Clicking Analyze sends this prompt with the current data summary."
+        ),
+        "ai_prompt_empty": "Enter a question or prompt to analyze.",
+        "ai_prompt_changed": (
+            "The prompt has changed. The result below used the previous prompt."
+        ),
         "solar_weather_title": "Daily Solar Radiation and Sunshine Duration",
         "solar_radiation": "Solar radiation",
         "solar_sunshine": "Sunshine duration",
@@ -1294,6 +1316,8 @@ def render_dashboard_login_form(st, text: dict[str, str], users: dict[str, str])
 
 def clear_dashboard_auth_session(st) -> None:
     st.session_state.pop("dashboard_ai_result", None)
+    st.session_state.pop("dashboard_ai_prompt_ko", None)
+    st.session_state.pop("dashboard_ai_prompt_en", None)
     st.session_state.pop(DASHBOARD_AUTH_SESSION_KEY, None)
     st.session_state.pop(DASHBOARD_AUTH_SESSION_EXPIRES_AT_KEY, None)
 
@@ -4435,6 +4459,17 @@ def render_ai_analysis(
             index=models.index(DEFAULT_ANALYSIS_MODEL),
             key="dashboard_ai_model",
         )
+    default_prompt = get_default_analysis_prompt(lang)
+    prompt_key = f"dashboard_ai_prompt_{lang}"
+    if prompt_key not in st.session_state:
+        st.session_state[prompt_key] = default_prompt
+    with st.expander(text["ai_prompt"]):
+        if st.button(text["ai_prompt_reset"], key="dashboard_ai_prompt_reset"):
+            st.session_state[prompt_key] = default_prompt
+        prompt = st.text_area(
+            text["ai_prompt"], value=None, height=240, key=prompt_key
+        )
+        st.caption(text["ai_prompt_help"])
     scope = (source, since.isoformat(), until.isoformat(), bucket_seconds, lang)
     saved = st.session_state.get("dashboard_ai_result")
     if saved and saved["scope"] != scope:
@@ -4443,7 +4478,13 @@ def render_ai_analysis(
     configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
     if not configured:
         st.info(text["ai_missing_key"])
-    if st.button(text["ai_button"], disabled=not configured, key="dashboard_ai_button"):
+    if not prompt.strip():
+        st.info(text["ai_prompt_empty"])
+    if st.button(
+        text["ai_button"],
+        disabled=not configured or not prompt.strip(),
+        key="dashboard_ai_button",
+    ):
         events = None
         if events_df is not None:
             events = [
@@ -4480,7 +4521,7 @@ def render_ai_analysis(
                     daily_df,
                     events,
                 )
-                result = request_analysis(summary, lang, model=model)
+                result = request_analysis(summary, lang, model=model, prompt=prompt)
             except AnalysisError as error:
                 st.error(f"{text['ai_error']}: {error}")
             except (RuntimeError, ValueError):
@@ -4497,11 +4538,14 @@ def render_ai_analysis(
                     "scope": scope,
                     "result": result,
                     "model": model,
+                    "prompt": prompt.strip(),
                     "at": datetime.now(timezone.utc).isoformat(),
                     "range": summary["loaded_range"],
                 }
                 st.session_state["dashboard_ai_result"] = saved
     if saved:
+        if saved.get("prompt", default_prompt) != prompt.strip():
+            st.caption(text["ai_prompt_changed"])
         st.caption(
             f"{text['ai_model']}: {saved.get('model', '—')} · "
             f"{text['ai_snapshot']}: {saved['at']} / "
