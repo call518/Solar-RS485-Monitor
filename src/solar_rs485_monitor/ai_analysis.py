@@ -33,7 +33,10 @@ class AnalysisError(RuntimeError):
 
 
 def build_weather_evidence(
-    since: datetime, until: datetime, display_timezone: ZoneInfo
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    minimum_days: int = 14,
 ) -> dict[str, Any]:
     """Load bounded daily weather, retaining unavailable evidence as a limitation."""
     evidence: dict[str, Any] = {
@@ -51,11 +54,12 @@ def build_weather_evidence(
             evidence["unavailable_reason"] = "Installation coordinates not configured."
             return evidence
         dates = solar_weather.get_weather_dates(
-            since, until, display_timezone, datetime.now(display_timezone).date()
+            since,
+            until,
+            display_timezone,
+            datetime.now(display_timezone).date(),
+            minimum_days=minimum_days,
         )
-        if dates is None:
-            evidence["unavailable_reason"] = "No completed days in requested range."
-            return evidence
         start, end = dates
         start = max(start, end - timedelta(days=89))
         evidence["range"] = {"since": start.isoformat(), "until": end.isoformat()}

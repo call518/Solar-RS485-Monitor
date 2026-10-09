@@ -1,6 +1,6 @@
 import json
 from contextlib import nullcontext
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -42,7 +42,7 @@ def test_weather_evidence_is_bounded_and_preserves_missing_values(
     json.dumps(evidence, allow_nan=False)
 
 
-@pytest.mark.parametrize("case", ["unconfigured", "failed", "today"])
+@pytest.mark.parametrize("case", ["unconfigured", "failed"])
 def test_unavailable_weather_is_reported_without_aborting_analysis(
     monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
@@ -58,14 +58,41 @@ def test_unavailable_weather_is_reported_without_aborting_analysis(
         raise weather.WeatherError("Open-Meteo connection failed or timed out.")
 
     monkeypatch.setattr(weather, "read_daily_solar_weather", handle_weather)
-    since = (
-        datetime.now(timezone.utc)
-        if case == "today"
-        else datetime(2026, 1, 1, tzinfo=timezone.utc)
-    )
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
     evidence = ai_analysis.build_weather_evidence(since, since, ZoneInfo("UTC"))
     assert evidence["daily"] == []
     assert evidence["unavailable_reason"]
+
+
+@pytest.mark.parametrize("minimum_days", [7, 14, 30])
+def test_ai_weather_includes_minimum_days_for_a_single_day_query(
+    monkeypatch: pytest.MonkeyPatch,
+    minimum_days: int,
+) -> None:
+    weather = ai_analysis.solar_weather
+    monkeypatch.setattr(weather, "get_solar_coordinates", lambda: (35, 127))
+
+    def handle_weather(
+        latitude: float, longitude: float, start: date, end: date, zone: str
+    ) -> list[dict[str, Any]]:
+        assert end == date(2026, 1, 1)
+        assert (end - start).days + 1 == minimum_days
+        days = pd.date_range(start, end)
+        return [
+            {"date": day.date().isoformat(), "radiation_kwh_m2": 5, "sunshine_hours": 6}
+            for day in days
+        ]
+
+    monkeypatch.setattr(weather, "read_daily_solar_weather", handle_weather)
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    evidence = ai_analysis.build_weather_evidence(
+        since, since, ZoneInfo("Asia/Seoul"), minimum_days=minimum_days
+    )
+    assert len(evidence["daily"]) == minimum_days
+    assert evidence["range"] == {
+        "since": (date(2026, 1, 1) - timedelta(days=minimum_days - 1)).isoformat(),
+        "until": "2026-01-01",
+    }
 
 
 def test_summary_is_bounded_and_excludes_sensitive_columns() -> None:
@@ -250,8 +277,12 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     }
 
     def handle_weather(
-        since: datetime, until: datetime, display_timezone: ZoneInfo
+        since: datetime,
+        until: datetime,
+        display_timezone: ZoneInfo,
+        minimum_days: int,
     ) -> dict[str, Any]:
+        assert minimum_days == 30
         weather_calls.append((since, until))
         return weather_evidence
 
@@ -267,6 +298,7 @@ def test_dashboard_refresh_retains_result_without_another_api_call(
     monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
     monkeypatch.setattr(dashboard, "request_analysis", handle_analysis)
     monkeypatch.setattr(dashboard, "build_weather_evidence", handle_weather)
+    monkeypatch.setenv("DASHBOARD_DAILY_GENERATION_DAYS", "30")
     st = DashboardStub()
     since = datetime(2026, 1, 1, tzinfo=timezone.utc)
     df = pd.DataFrame({"timestamp": [since], "output_ac_power_w": [100]})

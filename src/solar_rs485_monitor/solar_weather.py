@@ -33,12 +33,16 @@ def get_solar_coordinates() -> tuple[float, float] | None:
 
 
 def get_weather_dates(
-    since: datetime, until: datetime, display_timezone: ZoneInfo, today: date
-) -> tuple[date, date] | None:
-    """Use the displayed date range, excluding today's unfinished local day."""
+    since: datetime,
+    until: datetime,
+    display_timezone: ZoneInfo,
+    today: date,
+    minimum_days: int = 14,
+) -> tuple[date, date]:
+    """Cover the minimum completed local days, extending shorter display ranges."""
     start = since.astimezone(display_timezone).date()
     end = min(until.astimezone(display_timezone).date(), today - timedelta(days=1))
-    return (start, end) if start <= end else None
+    return min(start, end - timedelta(days=minimum_days - 1)), end
 
 
 def normalize_daily_weather(

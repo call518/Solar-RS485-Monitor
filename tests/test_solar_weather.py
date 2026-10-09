@@ -65,13 +65,21 @@ def test_range_excludes_today_in_installation_timezone() -> None:
     start = datetime(2026, 10, 1, tzinfo=timezone.utc)
     end = datetime(2026, 10, 8, 15, 1, tzinfo=timezone.utc)
     assert solar_weather.get_weather_dates(start, end, seoul, date(2026, 10, 9)) == (
-        date(2026, 10, 1),
+        date(2026, 9, 25),
         date(2026, 10, 8),
     )
-    assert solar_weather.get_weather_dates(end, end, seoul, date(2026, 10, 9)) is None
+    assert solar_weather.get_weather_dates(end, end, seoul, date(2026, 10, 9)) == (
+        date(2026, 9, 25),
+        date(2026, 10, 8),
+    )
     assert solar_weather.get_weather_dates(start, start, seoul, date(2026, 10, 9)) == (
+        date(2026, 9, 18),
         date(2026, 10, 1),
-        date(2026, 10, 1),
+    )
+    earlier = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    assert solar_weather.get_weather_dates(earlier, end, seoul, date(2026, 10, 9)) == (
+        date(2026, 9, 1),
+        date(2026, 10, 8),
     )
 
 
@@ -148,10 +156,14 @@ def test_provider_errors_are_safe(
     assert "private" not in str(caught.value)
 
 
+@pytest.mark.parametrize("minimum_days", [7, 14, 30])
 def test_dashboard_chart_axes_and_missing_values(
     monkeypatch: pytest.MonkeyPatch,
+    minimum_days: int,
 ) -> None:
     from solar_rs485_monitor import dashboard
+
+    monkeypatch.setenv("DASHBOARD_DAILY_GENERATION_DAYS", str(minimum_days))
 
     class DashboardStub:
         def __init__(self) -> None:
@@ -170,7 +182,14 @@ def test_dashboard_chart_axes_and_missing_values(
         weather_response(), date(2026, 10, 1), date(2026, 10, 3)
     )
     monkeypatch.setattr(dashboard, "get_solar_coordinates", lambda: (35, 127))
-    monkeypatch.setattr(dashboard, "read_daily_solar_weather", lambda *args: rows)
+    def handle_weather(
+        latitude: float, longitude: float, start: date, end: date, zone: str
+    ) -> list[dict[str, Any]]:
+        assert end == date(2026, 10, 3)
+        assert (end - start).days + 1 == minimum_days
+        return rows
+
+    monkeypatch.setattr(dashboard, "read_daily_solar_weather", handle_weather)
     captured: dict[str, Any] = {}
 
     def handle_chart(**kwargs: Any) -> None:

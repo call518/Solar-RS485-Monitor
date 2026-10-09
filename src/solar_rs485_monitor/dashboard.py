@@ -4093,7 +4093,7 @@ def render_dashboard_body(
 
             if metric_name == "total_generation_kwh":
                 render_solar_weather_chart(
-                    st, total_generation_since, display_until, text, display_timezone
+                    st, since, display_until, text, display_timezone
                 )
                 if daily_generation_error is not None:
                     st.warning(str(daily_generation_error))
@@ -4359,11 +4359,12 @@ def render_solar_weather_chart(
             st.info(text["solar_weather_missing_location"])
             return
         dates = get_weather_dates(
-            since, until, display_timezone, datetime.now(display_timezone).date()
+            since,
+            until,
+            display_timezone,
+            datetime.now(display_timezone).date(),
+            minimum_days=get_dashboard_daily_generation_days(),
         )
-        if dates is None:
-            st.caption(text["solar_weather_empty"])
-            return
         start, end = dates
         rows = read_daily_solar_weather(*coordinates, start, end, str(display_timezone))
     except WeatherError as error:
@@ -4523,7 +4524,10 @@ def render_ai_analysis(
                     events,
                 )
                 summary["solar_weather"] = build_weather_evidence(
-                    since, until, get_timezone()
+                    since,
+                    until,
+                    get_timezone(),
+                    minimum_days=get_dashboard_daily_generation_days(),
                 )
                 result = request_analysis(summary, lang, model=model, prompt=prompt)
             except AnalysisError as error:
