@@ -30,7 +30,7 @@ jobs:
         run: uv sync --frozen --group dev
 
       - name: Run Pytest
-        run: uv run --frozen pytest -ra
+        run: uv run --frozen python -m pytest -ra
 
       - name: Build Distributions
         run: uv build
