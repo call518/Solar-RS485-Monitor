@@ -309,10 +309,12 @@ ALERT_CHANNELS=""
 
 ## 설정
 
+Python 3.11 이상이 필요합니다.
+
 권장 설치 방법은 `uv`입니다.
 
 ```bash
-uv venv --python 3.10 .venv
+uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python solar-rs485-monitor
 ```
 
@@ -327,7 +329,7 @@ python -m venv .venv
 로컬 개발에서 `uv`와 프로젝트 `.venv`를 사용하는 경우:
 
 ```bash
-uv venv --python 3.10 .venv
+uv venv --python 3.11 .venv
 uv sync
 uv pip install --python .venv/bin/python -e .
 ```

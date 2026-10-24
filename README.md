@@ -311,10 +311,12 @@ The top status badge interprets `fault_code` using the fault metadata from the s
 
 ## Setup
 
+Python 3.11 or newer is required.
+
 The recommended install path uses `uv`:
 
 ```bash
-uv venv --python 3.10 .venv
+uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python solar-rs485-monitor
 ```
 
@@ -329,7 +331,7 @@ python -m venv .venv
 For local development with `uv` and the project `.venv`:
 
 ```bash
-uv venv --python 3.10 .venv
+uv venv --python 3.11 .venv
 uv sync
 uv pip install --python .venv/bin/python -e .
 ```
