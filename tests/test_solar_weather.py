@@ -214,6 +214,25 @@ def test_dashboard_chart_axes_and_missing_values(
     assert options["series"][1]["connectNulls"] is False
     assert any("Open-Meteo" in caption for caption in st.captions)
 
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: ZoneInfo | None = None) -> "FrozenDateTime":
+            return cls(2026, 10, 4, tzinfo=tz)
+
+    monkeypatch.setattr(dashboard, "datetime", FrozenDateTime)
+    captured.clear()
+    dashboard.render_solar_weather_chart(
+        st,
+        datetime(2026, 10, 1, tzinfo=timezone.utc),
+        datetime(2026, 10, 4, tzinfo=timezone.utc),
+        dashboard.UI_TEXT["en"],
+        ZoneInfo("Asia/Seoul"),
+    )
+    options = captured["options"]
+    assert options["xAxis"]["data"][-1] == "2026-10-04"
+    assert options["series"][0]["data"][-1] is None
+    assert options["series"][1]["data"][-1] is None
+
     def handle_failure(*args: Any) -> Any:
         raise solar_weather.WeatherError("Open-Meteo HTTP 429.")
 

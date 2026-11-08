@@ -1186,7 +1186,8 @@ SOLAR_LONGITUDE="127.789455645983"
 
 누적 발전량 차트 바로 아래에 Open-Meteo Historical Weather API의 일별
 일사량(왼쪽 축, 막대, kWh/m²/day)과 일조시간(오른쪽 축, 선, h/day)을 표시합니다.
-누적 발전량 차트의 표시 기간을 사용하되 `TIMEZONE` 기준 오늘은 제외합니다.
+누적 발전량 차트의 표시 기간을 사용하되 `TIMEZONE` 기준 오늘의 값은 제외하고,
+오늘을 포함한 기간에는 날짜를 구분할 수 있도록 오늘의 빈 축 구간만 표시합니다.
 `shortwave_radiation_sum`의 MJ/m²는 3.6으로 나누고, `sunshine_duration`의 초는
 3600으로 나눕니다. 일조시간은 일출~일몰의 길이와 다릅니다.
 

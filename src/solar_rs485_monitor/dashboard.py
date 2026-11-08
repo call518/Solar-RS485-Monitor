@@ -4358,11 +4358,12 @@ def render_solar_weather_chart(
         if coordinates is None:
             st.info(text["solar_weather_missing_location"])
             return
+        today = datetime.now(display_timezone).date()
         dates = get_weather_dates(
             since,
             until,
             display_timezone,
-            datetime.now(display_timezone).date(),
+            today,
             minimum_days=get_dashboard_daily_generation_days(),
         )
         start, end = dates
@@ -4386,6 +4387,15 @@ def render_solar_weather_chart(
     ):
         st.caption(text["solar_weather_empty"])
         return
+    if until.astimezone(display_timezone).date() >= today:
+        rows = [
+            *rows,
+            {
+                "date": today.isoformat(),
+                "radiation_kwh_m2": None,
+                "sunshine_hours": None,
+            },
+        ]
     options = {
         "animation": False,
         "grid": {"left": 70, "right": 70, "top": 55, "bottom": 76},

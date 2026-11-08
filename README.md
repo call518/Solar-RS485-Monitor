@@ -1179,7 +1179,8 @@ addresses are not used.
 
 A daily chart appears immediately after Total Generation: radiation bars on the
 left axis (kWh/m²/day) and sunshine duration on the right axis (h/day). It follows
-the cumulative chart's date range but excludes today in `TIMEZONE`. The
+the cumulative chart's date range but excludes today's values in `TIMEZONE`.
+When the range includes today, an empty x-axis slot is retained for it. The
 Open-Meteo Historical Weather API provides `shortwave_radiation_sum` (MJ/m²,
 divided by 3.6) and `sunshine_duration` (seconds, divided by 3600). Sunshine
 duration differs from sunrise-to-sunset daylight duration.
