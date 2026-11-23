@@ -328,6 +328,23 @@ python -m venv .venv
 ./.venv/bin/python -m pip install solar-rs485-monitor
 ```
 
+On legacy Linux distributions such as CentOS 7, the installer may not select a
+compatible wheel for a compiled dependency and may try to build `pandas`,
+`pyarrow`, or `Pillow` from source. That build can fail with the older system
+compiler. Require pre-built wheels to avoid the source-build path:
+
+```bash
+uv pip install --python .venv/bin/python --only-binary=:all: solar-rs485-monitor
+# Or, with pip:
+./.venv/bin/python -m pip install --only-binary=:all: solar-rs485-monitor
+```
+
+This lets the resolver choose dependency versions that provide wheels compatible
+with the current Python, CPU architecture, and system C library. It does not add
+support for an otherwise incompatible platform: installation stops with `No
+matching distribution found` if any required dependency has no compatible wheel.
+Python 3.11 or newer is still required.
+
 For local development with `uv` and the project `.venv`:
 
 ```bash

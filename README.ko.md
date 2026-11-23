@@ -326,6 +326,24 @@ python -m venv .venv
 ./.venv/bin/python -m pip install solar-rs485-monitor
 ```
 
+CentOS 7 같은 구형 Linux 배포판에서는 설치 프로그램이 컴파일된 의존성의
+호환 wheel을 선택하지 못하고 `pandas`, `pyarrow`, `Pillow` 등을 소스에서
+빌드하려 할 수 있습니다. 이 빌드는 구형 시스템 컴파일러에서 실패할 수
+있습니다. 다음과 같이 미리 빌드된 wheel만 사용하면 소스 빌드를 피할 수
+있습니다.
+
+```bash
+uv pip install --python .venv/bin/python --only-binary=:all: solar-rs485-monitor
+# 또는 pip 사용 시:
+./.venv/bin/python -m pip install --only-binary=:all: solar-rs485-monitor
+```
+
+이 옵션을 사용하면 resolver가 현재 Python, CPU architecture, 시스템 C
+library와 호환되는 wheel을 제공하는 의존성 버전을 선택합니다. 호환되지 않는
+platform에 대한 지원을 새로 추가하는 것은 아닙니다. 필수 의존성 중 하나라도
+호환 wheel이 없으면 `No matching distribution found` 오류로 설치가 중단됩니다.
+Python 3.11 이상 요구 사항도 그대로 적용됩니다.
+
 로컬 개발에서 `uv`와 프로젝트 `.venv`를 사용하는 경우:
 
 ```bash
