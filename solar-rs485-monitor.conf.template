@@ -72,6 +72,8 @@ OPENAI_MAX_OUTPUT_TOKENS="8192"
 # Both values are required; leave blank to disable weather requests.
 SOLAR_LATITUDE=""
 SOLAR_LONGITUDE=""
+# [Optional] Python CA bundle path for HTTPS on legacy CentOS/RHEL.
+# SSL_CERT_FILE="/etc/pki/tls/certs/ca-bundle.crt"
 
 # [Optional] Streamlit dashboard title and server defaults.
 DASHBOARD_TITLE="Solar RS485 Monitor"

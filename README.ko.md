@@ -344,6 +344,32 @@ platform에 대한 지원을 새로 추가하는 것은 아닙니다. 필수 의
 호환 wheel이 없으면 `No matching distribution found` 오류로 설치가 중단됩니다.
 Python 3.11 이상 요구 사항도 그대로 적용됩니다.
 
+CentOS/RHEL에서는 `curl`과 Python이 서로 다른 인증서 저장소를 사용할 수
+있습니다. 대시보드에 `Open-Meteo connection failed or timed out`이 표시되고
+Python에서 `CERTIFICATE_VERIFY_FAILED`가 발생하면, 먼저 프로젝트 가상환경에
+시스템 CA bundle을 지정해 확인합니다.
+
+```bash
+SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt \
+  ./.venv/bin/python -c 'from urllib.request import urlopen; print(urlopen("https://archive-api.open-meteo.com", timeout=10).status)'
+```
+
+매개변수가 없는 이 테스트 URL의 `HTTP Error 400`을 포함해 HTTP 응답을
+받았다면 TLS 인증서 검증에 성공한 것입니다. 그다음
+`solar-rs485-monitor.conf`에 CA bundle 경로를 추가하고 대시보드 서비스를
+재시작합니다.
+
+```dotenv
+SSL_CERT_FILE="/etc/pki/tls/certs/ca-bundle.crt"
+```
+
+```bash
+systemctl restart solar-rs485-monitor-dashboard
+```
+
+호스트에 해당 경로가 실제로 있을 때만 이 설정을 사용합니다. TLS 인증서
+검증을 비활성화하면 안 됩니다.
+
 로컬 개발에서 `uv`와 프로젝트 `.venv`를 사용하는 경우:
 
 ```bash

@@ -345,6 +345,31 @@ support for an otherwise incompatible platform: installation stops with `No
 matching distribution found` if any required dependency has no compatible wheel.
 Python 3.11 or newer is still required.
 
+On CentOS/RHEL, `curl` and Python may use different certificate stores. If the
+dashboard reports `Open-Meteo connection failed or timed out` and Python raises
+`CERTIFICATE_VERIFY_FAILED`, first verify the system CA bundle with the project
+virtual environment:
+
+```bash
+SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt \
+  ./.venv/bin/python -c 'from urllib.request import urlopen; print(urlopen("https://archive-api.open-meteo.com", timeout=10).status)'
+```
+
+An HTTP response, including `HTTP Error 400` for this parameter-free test URL,
+confirms that TLS verification succeeded. Then add the CA bundle path to
+`solar-rs485-monitor.conf` and restart the dashboard service:
+
+```dotenv
+SSL_CERT_FILE="/etc/pki/tls/certs/ca-bundle.crt"
+```
+
+```bash
+systemctl restart solar-rs485-monitor-dashboard
+```
+
+Use this setting only when the configured path exists on the host. Do not
+disable TLS certificate verification.
+
 For local development with `uv` and the project `.venv`:
 
 ```bash
